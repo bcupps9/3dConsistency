@@ -1,0 +1,2 @@
+-r third_party/Wan2.2/requirements.txt
+# Install a CUDA-compatible torch build on the cluster separately, e.g. via modules or pip.
