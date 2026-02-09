@@ -14,7 +14,7 @@ Sync to cluster:
 1. `bash scripts/sync_to_remote.sh`
 
 Remote one-time setup (on cluster):
-1. `ssh bcupps@holylogin05`
+1. `ssh user@login.rc.fas.harvard.edu`
 2. `cd ~/projects/3dConsistency`
 3. `python -m venv .venv`
 4. `source .venv/bin/activate`
@@ -32,3 +32,29 @@ Submit inference job:
 
 Fetch outputs:
 1. `bash scripts/fetch_run.sh <run_id>`
+
+General Job Submission tips:
+
+Likely using sbatch ____ to run a script which then allows the compute node access to run what it needs and informatiion about what to write back. 
+
+
+#!/bin/bash
+#SBATCH -c 1                # Number of cores (-c)
+#SBATCH -t 0-00:10          # Runtime in D-HH:MM, minimum of 10 minutes
+#SBATCH -p serial_requeue   # Partition to submit to
+#SBATCH --mem=100           # Memory pool for all cores (see also --mem-per-cpu)
+#SBATCH -o myoutput_%j.out  # File to which STDOUT will be written, %j inserts jobid
+#SBATCH -e myerrors_%j.err  # File to which STDERR will be written, %j inserts jobid
+
+# load modules
+module load python/3.10.9-fasrc01
+
+# run code
+python -c 'print("Hi there.")'
+
+In general, the script is composed of 4 parts.
+
+the #!/bin/bash line allows the script to be run as a bash script
+the #SBATCH lines are technically bash comments, but they set various parameters for the SLURM scheduler
+loading any necessary modules and setting any variables, paths, etc.
+the command line itself, in this case calling python and having it print a message.
