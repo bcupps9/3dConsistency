@@ -11,9 +11,9 @@ PROJECT_DIR="${PROJECT_DIR:-$HOME/projects/3dConsistency}"
 REMOTE_ENV="${REMOTE_ENV:-$PROJECT_DIR/.mamba/wan2}"
 PROJECT_RUN_DIR="${PROJECT_DIR}/runs/${RUN_ID}"
 
-SCRATCH_BASE_DEFAULT="/n/netscratch/${USER}"
+SCRATCH_BASE_DEFAULT="/n/netscratch/ydu_lab/Lab/bcupps"
 SCRATCH_BASE="${SCRATCH_BASE:-$SCRATCH_BASE_DEFAULT}"
-SCRATCH_RUN_DIR="${SCRATCH_BASE}/3dConsistency/runs/${RUN_ID}"
+SCRATCH_RUN_DIR="${SCRATCH_BASE}/results/${RUN_ID}"
 
 cd "${PROJECT_DIR}"
 mkdir -p "${PROJECT_RUN_DIR}"
@@ -51,10 +51,29 @@ if command -v nvcc >/dev/null 2>&1; then
   export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 fi
 
-# TODO: Replace the command below with the actual Wan2.2 inference invocation.
-# Example placeholder:
-# python third_party/Wan2.2/infer.py --config configs/wan2.2.yaml --output "${RUN_DIR}"
-echo "TODO: run Wan2.2 inference here, writing outputs to ${RUN_DIR}"
+MODEL_BASE="${MODEL_BASE:-/n/netscratch/ydu_lab/Lab/bcupps/models}"
+MODEL_NAME="${MODEL_NAME:-Wan2.2-T2V-A14B}"
+CKPT_DIR="${CKPT_DIR:-${MODEL_BASE}/${MODEL_NAME}}"
+TASK="${TASK:-t2v-A14B}"
+SIZE="${SIZE:-832*480}"
+PROMPT="${PROMPT:-Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.}"
+SAVE_FILE="${SAVE_FILE:-${RUN_DIR}/t2v_A14B_${RUN_ID}.mp4}"
+
+if [[ ! -d "${CKPT_DIR}" ]]; then
+  echo "Checkpoint dir not found: ${CKPT_DIR}" >&2
+  echo "Set CKPT_DIR or MODEL_BASE/MODEL_NAME to where the weights live." >&2
+  exit 1
+fi
+
+cd "${PROJECT_DIR}/third_party/Wan2.2"
+python generate.py \
+  --task "${TASK}" \
+  --size "${SIZE}" \
+  --ckpt_dir "${CKPT_DIR}" \
+  --offload_model True \
+  --convert_model_dtype \
+  --prompt "${PROMPT}" \
+  --save_file "${SAVE_FILE}"
 
 if [[ "${RUN_DIR}" != "${PROJECT_RUN_DIR}" ]]; then
   if command -v rsync >/dev/null 2>&1; then
