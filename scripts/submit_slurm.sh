@@ -5,14 +5,8 @@ REMOTE_USER="bcupps"
 REMOTE_HOST="holylogin05"
 REMOTE_DIR="~/projects/3dConsistency"
 
-GPU_PARTITION="${GPU_PARTITION:-<gpu_partition_placeholder>}"
+GPU_PARTITION="${GPU_PARTITION:-gpu}"
 RUN_ID="${1:-$(date +%Y%m%d_%H%M%S)}"
-
-if [[ "${GPU_PARTITION}" == *"<"*"gpu_partition_placeholder"* ]]; then
-  echo "Set GPU_PARTITION to your cluster's GPU partition before submitting." >&2
-  echo "Example: GPU_PARTITION=gpu bash scripts/submit_slurm.sh" >&2
-  exit 1
-fi
 
 ssh "${REMOTE_USER}@${REMOTE_HOST}" "bash -lc 'set -euo pipefail
   cd ${REMOTE_DIR}
