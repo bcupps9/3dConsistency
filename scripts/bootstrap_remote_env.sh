@@ -7,6 +7,7 @@ MINIFORGE_MODULE="${MINIFORGE_MODULE:-Miniforge3/24.11.3-fasrc02}"
 CUDA_MODULE="${CUDA_MODULE:-cuda/12.4.1-fasrc01}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 
+module load "${CUDA_MODULE}"
 module load "${MINIFORGE_MODULE}"
 eval "$(/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda shell.bash hook)"
 
