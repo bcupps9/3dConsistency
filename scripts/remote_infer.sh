@@ -8,7 +8,7 @@ if [[ -z "${RUN_ID}" ]]; then
 fi
 
 PROJECT_DIR="${PROJECT_DIR:-$HOME/projects/3dConsistency}"
-REMOTE_VENV="${REMOTE_VENV:-$PROJECT_DIR/.venv}"
+REMOTE_ENV="${REMOTE_ENV:-$PROJECT_DIR/.mamba/wan2}"
 PROJECT_RUN_DIR="${PROJECT_DIR}/runs/${RUN_ID}"
 
 SCRATCH_BASE_DEFAULT="/n/netscratch/${USER}"
@@ -26,17 +26,29 @@ fi
 
 if command -v module >/dev/null 2>&1; then
   module purge || true
-  # Example (replace with your cluster's modules):
-  # module load cuda/12.1
-  # module load python/3.10
+  module load cuda/12.4.1-fasrc01
+  module load Miniforge3/24.11.3-fasrc02
 fi
 
-if [[ -f "${REMOTE_VENV}/bin/activate" ]]; then
-  # shellcheck disable=SC1090
-  source "${REMOTE_VENV}/bin/activate"
+if [[ -x "/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda" ]]; then
+  eval "$(/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda shell.bash hook)"
 else
-  echo "Remote venv not found at ${REMOTE_VENV}. Create it and install requirements/remote.txt." >&2
+  echo "Conda hook not found. Ensure Miniforge module is loaded." >&2
   exit 1
+fi
+
+if [[ -x "${REMOTE_ENV}/bin/python" ]]; then
+  conda activate "${REMOTE_ENV}"
+else
+  echo "Remote env not found at ${REMOTE_ENV}. Run scripts/bootstrap_remote_env.sh first." >&2
+  exit 1
+fi
+
+if command -v nvcc >/dev/null 2>&1; then
+  CUDA_HOME="$(dirname "$(dirname "$(command -v nvcc)")")"
+  export CUDA_HOME
+  export PATH="${CUDA_HOME}/bin:${PATH}"
+  export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 fi
 
 # TODO: Replace the command below with the actual Wan2.2 inference invocation.
