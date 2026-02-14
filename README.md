@@ -137,9 +137,7 @@ TODO:
 
 Text to video and image to video on WISA for both of LVP and WAN2.2 and remark upon the differences.
 
-finetune on wisa and 
-
-both dataset
+finetune on wisa and both dataset
 
 50 videos from each.
 
@@ -151,4 +149,9 @@ think a little bit about diffusion forcing as well.
 There is a dir from which we can pull the videos for the physics sim one
 https://github.com/google-deepmind/physics-IQ-benchmark/blob/main/code/download_physics_iq_data.py
 
+LIST (2/14):
+- Test inference on both LVP and WAN2.1 (new env for each?)
+  - LVP inf docs
+  - WAN2.1 inf docs
+- Generate the script that pulls out image from first frame, generates (or takes) prompt, and generates the video for each model and fills out the db which we will then copy from to HTML at the time required
 
