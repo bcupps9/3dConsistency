@@ -1,3 +1,6 @@
 [submodule "third_party/Wan2.2"]
 	path = third_party/Wan2.2
 	url = https://github.com/Wan-Video/Wan2.2.git
+[submodule "third_party/large-video-planner"]
+	path = third_party/large-video-planner
+	url = https://github.com/buoyancy99/large-video-planner.git
