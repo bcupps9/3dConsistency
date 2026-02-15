@@ -14,7 +14,7 @@ set -euo pipefail
 #   MINIFORGE_MODULE=Miniforge3/24.11.3-fasrc02
 #   TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
 #   INSTALL_FLASH_ATTN=1
-#   STRICT_FLASH_ATTN=0
+#   STRICT_FLASH_ATTN=1
 #   FLASH_ATTN_FORCE_SOURCE=1
 #   FLASH_ATTN_VERSION=2.7.4.post1
 #   PURGE_PIP_CACHE=1
@@ -29,7 +29,7 @@ MINIFORGE_MODULE="${MINIFORGE_MODULE:-Miniforge3/24.11.3-fasrc02}"
 CONDA_HOOK_BIN="${CONDA_HOOK_BIN:-/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
-STRICT_FLASH_ATTN="${STRICT_FLASH_ATTN:-0}"
+STRICT_FLASH_ATTN="${STRICT_FLASH_ATTN:-1}"
 INSTALL_DOWNLOAD_TOOLS="${INSTALL_DOWNLOAD_TOOLS:-1}"
 MAX_JOBS="${MAX_JOBS:-8}"
 FLASH_ATTN_FORCE_SOURCE="${FLASH_ATTN_FORCE_SOURCE:-1}"
@@ -191,6 +191,15 @@ PY
       fi
     fi
   fi
+fi
+
+if [[ "${STRICT_FLASH_ATTN}" == "1" ]]; then
+  if [[ "${INSTALL_FLASH_ATTN}" != "1" ]]; then
+    echo "STRICT_FLASH_ATTN=1 requires INSTALL_FLASH_ATTN=1." >&2
+    exit 1
+  fi
+  python -c "import flash_attn; print('flash_attn', flash_attn.__version__)" \
+    | tee "${DIAG_DIR}/flash_attn_verify.txt"
 fi
 
 if [[ "${INSTALL_DOWNLOAD_TOOLS}" == "1" ]]; then
