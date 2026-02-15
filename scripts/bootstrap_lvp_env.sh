@@ -22,6 +22,12 @@ CUDA_MODULE="${CUDA_MODULE:-cuda/12.4.1-fasrc01}"
 MINIFORGE_MODULE="${MINIFORGE_MODULE:-Miniforge3/24.11.3-fasrc02}"
 CONDA_HOOK_BIN="${CONDA_HOOK_BIN:-/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda}"
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
+STRICT_FLASH_ATTN="${STRICT_FLASH_ATTN:-0}"
+INSTALL_DOWNLOAD_TOOLS="${INSTALL_DOWNLOAD_TOOLS:-1}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
+TORCH_VERSION="${TORCH_VERSION:-2.6.0}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.21.0}"
+MAX_JOBS="${MAX_JOBS:-8}"
 
 cd "${PROJECT_DIR}"
 
@@ -48,13 +54,34 @@ if ! conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
 fi
 
 conda activate "${ENV_NAME}"
-python -m pip install -U pip setuptools wheel
+python -m pip install -U pip setuptools wheel packaging ninja psutil
 
 cd "${PROJECT_DIR}/third_party/large-video-planner"
+python -m pip install \
+  "torch==${TORCH_VERSION}" \
+  "torchvision==${TORCHVISION_VERSION}" \
+  --index-url "${TORCH_INDEX_URL}"
 python -m pip install -r requirements.txt
 
 if [[ "${INSTALL_FLASH_ATTN}" == "1" ]]; then
-  python -m pip install flash-attn --no-build-isolation
+  if command -v nvcc >/dev/null 2>&1; then
+    CUDA_HOME="$(dirname "$(dirname "$(command -v nvcc)")")"
+    export CUDA_HOME
+    export PATH="${CUDA_HOME}/bin:${PATH}"
+    export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+  fi
+  export MAX_JOBS
+  if ! python -m pip install flash-attn --no-build-isolation; then
+    if [[ "${STRICT_FLASH_ATTN}" == "1" ]]; then
+      echo "flash-attn installation failed and STRICT_FLASH_ATTN=1." >&2
+      exit 1
+    fi
+    echo "Warning: flash-attn install failed; continuing without it (inference is still possible)." >&2
+  fi
+fi
+
+if [[ "${INSTALL_DOWNLOAD_TOOLS}" == "1" ]]; then
+  python -m pip install -U "huggingface_hub[cli]" hf_transfer
 fi
 
 python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
