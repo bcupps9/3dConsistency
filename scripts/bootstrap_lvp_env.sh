@@ -40,6 +40,7 @@ FLASH_ATTN_VERSION="${FLASH_ATTN_VERSION:-}"
 PURGE_PIP_CACHE="${PURGE_PIP_CACHE:-1}"
 VERBOSE_PIP="${VERBOSE_PIP:-0}"
 DIAG_DIR="${DIAG_DIR:-$PROJECT_DIR/.diag/lvp_$(date +%Y%m%d_%H%M%S)}"
+LVP_TENSORBOARD_COMPAT_VERSION="${LVP_TENSORBOARD_COMPAT_VERSION:-2.15.2}"
 
 say() { echo ""; echo "==== $* ===="; }
 warn() { echo "Warning: $*" >&2; }
@@ -123,6 +124,17 @@ say "Install LVP Requirements (Without flash-attn)"
 REQ_FILE="third_party/large-video-planner/requirements.txt"
 TMP_REQ_FILE="$(mktemp "${TMPDIR:-/tmp}/lvp_requirements.XXXXXX.txt")"
 grep -viE '^[[:space:]]*#?[[:space:]]*flash[_-]?attn([[:space:]]|=|$)' "${REQ_FILE}" > "${TMP_REQ_FILE}"
+
+# LVP requirements currently pin tensorboard==2.19.0 alongside tensorflow==2.15.0.
+# TensorFlow 2.15 requires tensorboard<2.16, so patch the temp requirements file.
+if grep -q '^tensorflow==2\.15\.0$' "${TMP_REQ_FILE}" && grep -q '^tensorboard==2\.19\.0$' "${TMP_REQ_FILE}"; then
+  say "Patch tensorboard pin for tensorflow compatibility"
+  awk -v tb="${LVP_TENSORBOARD_COMPAT_VERSION}" '
+    { if ($0 ~ /^tensorboard==2\.19\.0$/) print "tensorboard==" tb; else print $0 }
+  ' "${TMP_REQ_FILE}" > "${TMP_REQ_FILE}.patched"
+  mv "${TMP_REQ_FILE}.patched" "${TMP_REQ_FILE}"
+fi
+
 python -m pip install -r "${TMP_REQ_FILE}"
 rm -f "${TMP_REQ_FILE}"
 
