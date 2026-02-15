@@ -24,6 +24,7 @@ INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
 STRICT_FLASH_ATTN="${STRICT_FLASH_ATTN:-0}"
 INSTALL_DOWNLOAD_TOOLS="${INSTALL_DOWNLOAD_TOOLS:-1}"
 MAX_JOBS="${MAX_JOBS:-8}"
+FLASH_ATTN_FORCE_SOURCE="${FLASH_ATTN_FORCE_SOURCE:-1}"
 
 cd "${PROJECT_DIR}"
 
@@ -74,12 +75,23 @@ if [[ "${INSTALL_FLASH_ATTN}" == "1" ]]; then
     export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
   fi
   export MAX_JOBS
-  if ! python -m pip install flash-attn --no-build-isolation; then
+  python -m pip uninstall -y flash-attn flash_attn >/dev/null 2>&1 || true
+  FLASH_CMD=(python -m pip install flash-attn --no-build-isolation)
+  if [[ "${FLASH_ATTN_FORCE_SOURCE}" == "1" ]]; then
+    FLASH_CMD+=(--no-binary flash-attn)
+  fi
+  if ! "${FLASH_CMD[@]}"; then
     if [[ "${STRICT_FLASH_ATTN}" == "1" ]]; then
       echo "flash-attn installation failed and STRICT_FLASH_ATTN=1." >&2
       exit 1
     fi
     echo "Warning: flash-attn install failed; continuing without it (inference is still possible)." >&2
+  elif ! python -c "import flash_attn" >/dev/null 2>&1; then
+    if [[ "${STRICT_FLASH_ATTN}" == "1" ]]; then
+      echo "flash-attn installed but import failed; STRICT_FLASH_ATTN=1." >&2
+      exit 1
+    fi
+    echo "Warning: flash-attn installed but cannot be imported; continuing without it." >&2
   fi
 fi
 
