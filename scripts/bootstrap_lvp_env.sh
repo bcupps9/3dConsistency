@@ -125,12 +125,18 @@ REQ_FILE="third_party/large-video-planner/requirements.txt"
 TMP_REQ_FILE="$(mktemp "${TMPDIR:-/tmp}/lvp_requirements.XXXXXX.txt")"
 grep -viE '^[[:space:]]*#?[[:space:]]*flash[_-]?attn([[:space:]]|=|$)' "${REQ_FILE}" > "${TMP_REQ_FILE}"
 
-# LVP requirements currently pin tensorboard==2.19.0 alongside tensorflow==2.15.0.
-# TensorFlow 2.15 requires tensorboard<2.16, so patch the temp requirements file.
-if grep -q '^tensorflow==2\.15\.0$' "${TMP_REQ_FILE}" && grep -q '^tensorboard==2\.19\.0$' "${TMP_REQ_FILE}"; then
+# TensorFlow 2.15 requires tensorboard < 2.16.
+# If requirements contain tensorflow==2.15.x, force tensorboard to a compatible pin.
+if grep -Eq '^[[:space:]]*tensorflow==2\.15(\.[0-9]+)?([[:space:]]*#.*)?$' "${TMP_REQ_FILE}"; then
   say "Patch tensorboard pin for tensorflow compatibility"
   awk -v tb="${LVP_TENSORBOARD_COMPAT_VERSION}" '
-    { if ($0 ~ /^tensorboard==2\.19\.0$/) print "tensorboard==" tb; else print $0 }
+    {
+      if ($0 ~ /^[[:space:]]*tensorboard==[0-9.]+([[:space:]]*#.*)?$/) {
+        print "tensorboard==" tb
+      } else {
+        print $0
+      }
+    }
   ' "${TMP_REQ_FILE}" > "${TMP_REQ_FILE}.patched"
   mv "${TMP_REQ_FILE}.patched" "${TMP_REQ_FILE}"
 fi
