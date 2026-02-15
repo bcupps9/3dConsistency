@@ -155,3 +155,39 @@ LIST (2/14):
   - WAN2.1 inf docs
 - Generate the script that pulls out image from first frame, generates (or takes) prompt, and generates the video for each model and fills out the db which we will then copy from to HTML at the time required
 
+Fixing flash attn because logins might have newere glibc than we expected or than we see on gpu nodes:
+
+module purge
+module load cuda/12.4.1-fasrc01
+module load Miniforge3/24.11.3-fasrc02
+
+conda activate /n/home12/bcupps/projects/3dConsistency/.mamba/wan21
+python -m pip uninstall -y flash-attn flash_attn || true
+
+# IMPORTANT: make sure you are using system gcc, not a devtoolset
+which gcc
+gcc --version
+ldd --version | head -n 1
+
+# Ensure torch libs are discoverable during build and runtime:
+export TORCH_LIB_DIR=$(python - <<'PY'
+import os, torch
+print(os.path.join(os.path.dirname(torch.__file__), "lib"))
+PY
+)
+export LD_LIBRARY_PATH="$TORCH_LIB_DIR:${LD_LIBRARY_PATH:-}"
+
+export CUDA_HOME="$(dirname "$(dirname "$(command -v nvcc)")")"
+export PATH="$CUDA_HOME/bin:$PATH"
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
+export MAX_JOBS=4
+
+python -m pip install --no-build-isolation --no-binary flash-attn flash-attn
+
+# sanity check: does the .so still require GLIBC_2.32?
+SO=/n/home12/bcupps/projects/3dConsistency/.mamba/wan21/lib/python3.10/site-packages/flash_attn_2_cuda*.so
+ldd -v $SO | grep -n "GLIBC_2.32" -n || echo "No GLIBC_2.32 requirement 👍"
+
+python -c "import flash_attn; print(flash_attn.__version__)"
+
+need to figure out where the flash build is actually coming from.
