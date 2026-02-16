@@ -226,3 +226,8 @@ PLAN:
 great, this is good, now lets see if we can run that inference script because eventually I want to have runs in the scratch space on remote broken doesn into model which breaks in 2.2 2.1 lvp each of which breaks into a dataset which each break into img to video and text to video. But, that structure will have to be created by running these scripts that put the outputs in exactly the right places and get the inputs from exactly the right place to match. I am going to load in tuples of prompts, ground truth data into the scratch space somewhere and then want scripts that for each goes through and runs+ records the prompt to video and then takes out first frame and runs a img to video as well and then stores in the format that I wanted (adding the groudtruth to there as well). 
 
 ls -ltr ~/projects/3dConsistency/runs/20260215_233048/slurm-*.out
+
+sbatch -p gpu_h200 --gres=gpu:nvidia_h200:1 --mem=16G --wrap="nvidia-smi -L; sleep 30"
+
+
+

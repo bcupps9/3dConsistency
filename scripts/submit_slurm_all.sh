@@ -15,11 +15,19 @@ RUN_MODE="${RUN_MODE:-smoke}"
 
 GPU_PARTITION="${GPU_PARTITION:-gpu_test}"
 GPUS="${GPUS:-1}"
-GRES="${GRES:-gpu:${GPUS}}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 MEMORY="${MEMORY:-128G}"
 WALLTIME="${WALLTIME:-04:00:00}"
 JOB_NAME="${JOB_NAME:-wm_all_infer}"
+
+# Cluster-specific default: gpu_h200 uses the nvidia_h200 GRES name.
+if [[ -z "${GRES:-}" ]]; then
+  if [[ "${GPU_PARTITION}" == "gpu_h200" ]]; then
+    GRES="gpu:nvidia_h200:${GPUS}"
+  else
+    GRES="gpu:${GPUS}"
+  fi
+fi
 
 use_local_submit=0
 case "${LOCAL_SUBMIT}" in
