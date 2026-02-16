@@ -31,6 +31,19 @@ Submit inference job:
 2. `GPU_PARTITION=<your_gpu_partition> bash scripts/submit_slurm.sh`
 3. Optional custom run id: `bash scripts/submit_slurm.sh my_run_id`
 
+Submit all-model inference job (Wan2.2 + Wan2.1 + LVP):
+1. Smoke test for all three:
+   `GPU_PARTITION=<your_gpu_partition> TARGETS=wan22,wan21,lvp RUN_MODE=smoke bash scripts/submit_slurm_all.sh`
+2. Full LVP path (uses `algorithm=wan_i2v`) plus Wan2.1/Wan2.2:
+   `GPU_PARTITION=<your_gpu_partition> TARGETS=wan22,wan21,lvp RUN_MODE=full bash scripts/submit_slurm_all.sh`
+3. Run subset only (example: Wan2.1 + LVP):
+   `GPU_PARTITION=<your_gpu_partition> TARGETS=wan21,lvp RUN_MODE=smoke bash scripts/submit_slurm_all.sh my_run_id`
+
+Notes:
+- `scripts/submit_slurm_all.sh` submits `scripts/remote_infer_all.sh`.
+- `RUN_MODE=smoke` runs LVP with `wan_toy` + `dummy` dataset for fast validation.
+- `RUN_MODE=full` runs LVP with `wan_i2v` and expects dataset/checkpoints to be ready.
+
 Fetch outputs:
 1. `bash scripts/fetch_run.sh <run_id>`
 
