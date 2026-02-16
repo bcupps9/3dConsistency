@@ -55,6 +55,11 @@ log() {
   echo "==== $* ===="
 }
 
+model_output_dir() {
+  local model_key="$1"
+  echo "${RUN_DIR}/${model_key}"
+}
+
 if [[ "${RUN_MODE}" != "smoke" && "${RUN_MODE}" != "full" ]]; then
   echo "Invalid RUN_MODE=${RUN_MODE}; expected 'smoke' or 'full'." >&2
   exit 1
@@ -112,7 +117,10 @@ run_wan22() {
     exit 1
   fi
 
-  local save_file="${RUN_DIR}/wan22_${WAN22_TASK}_${RUN_ID}.mp4"
+  local model_dir
+  model_dir="$(model_output_dir wan22)"
+  mkdir -p "${model_dir}"
+  local save_file="${model_dir}/${WAN22_TASK}_${RUN_ID}.mp4"
   cd "${PROJECT_DIR}/third_party/Wan2.2"
   python generate.py \
     --task "${WAN22_TASK}" \
@@ -137,7 +145,10 @@ run_wan21() {
     exit 1
   fi
 
-  local save_file="${RUN_DIR}/wan21_${WAN21_TASK}_${RUN_ID}.mp4"
+  local model_dir
+  model_dir="$(model_output_dir wan21)"
+  mkdir -p "${model_dir}"
+  local save_file="${model_dir}/${WAN21_TASK}_${RUN_ID}.mp4"
   cd "${PROJECT_DIR}/third_party/Wan2.1"
   python generate.py \
     --task "${WAN21_TASK}" \
@@ -181,6 +192,10 @@ run_lvp() {
   export WANDB_MODE="${WANDB_MODE:-offline}"
   cd "${PROJECT_DIR}/third_party/large-video-planner"
 
+  local model_dir
+  model_dir="$(model_output_dir lvp)"
+  mkdir -p "${model_dir}"
+
   if [[ "${RUN_MODE}" == "smoke" ]]; then
     python -m main \
       +name="lvp_smoke_${RUN_ID}" \
@@ -189,7 +204,7 @@ run_lvp() {
       dataset=dummy \
       'experiment.tasks=[validation]' \
       experiment.validation.limit_batch=1 \
-      "hydra.run.dir=${RUN_DIR}/lvp_smoke"
+      "hydra.run.dir=${model_dir}/smoke"
   else
     prepare_lvp_ckpts
     python -m main \
@@ -203,11 +218,27 @@ run_lvp() {
       "experiment.validation.limit_batch=${LVP_LIMIT_BATCH}" \
       "algorithm.hist_guidance=${LVP_HIST_GUIDANCE}" \
       "algorithm.lang_guidance=${LVP_LANG_GUIDANCE}" \
-      "hydra.run.dir=${RUN_DIR}/lvp_i2v"
+      "hydra.run.dir=${model_dir}/full"
   fi
 }
 
 IFS=',' read -r -a target_list <<< "${TARGETS}"
+
+# Create model-level directories up front so a run always has predictable structure.
+for raw_target in "${target_list[@]}"; do
+  target="${raw_target//[[:space:]]/}"
+  case "${target}" in
+    wan22|wan21|lvp)
+      mkdir -p "$(model_output_dir "${target}")"
+      ;;
+    "")
+      ;;
+    *)
+      # Invalid targets are handled in the execution loop below.
+      ;;
+  esac
+done
+
 for raw_target in "${target_list[@]}"; do
   target="${raw_target//[[:space:]]/}"
   case "${target}" in

@@ -204,3 +204,9 @@ ldd -v $SO | grep -n "GLIBC_2.32" -n || echo "No GLIBC_2.32 requirement 👍"
 python -c "import flash_attn; print(flash_attn.__version__)"
 
 need to figure out where the flash build is actually coming from.
+
+WE ARE NOT USING FLASH ATTENTION IN ANY MODEL, SO UP THE GPU AND H200 count. 
+
+
+PLAN:
+great, this is good, now lets see if we can run that inference script because eventually I want to have runs in the scratch space on remote broken doesn into model which breaks in 2.2 2.1 lvp each of which breaks into a dataset which each break into img to video and text to video. But, that structure will have to be created by running these scripts that put the outputs in exactly the right places and get the inputs from exactly the right place to match. I am going to load in tuples of prompts, ground truth data into the scratch space somewhere and then want scripts that for each goes through and runs+ records the prompt to video and then takes out first frame and runs a img to video as well and then stores in the format that I wanted (adding the groudtruth to there as well). 
