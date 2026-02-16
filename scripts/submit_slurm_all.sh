@@ -15,6 +15,7 @@ RUN_MODE="${RUN_MODE:-smoke}"
 
 GPU_PARTITION="${GPU_PARTITION:-gpu_test}"
 GPUS="${GPUS:-1}"
+GRES="${GRES:-gpu:${GPUS}}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 MEMORY="${MEMORY:-128G}"
 WALLTIME="${WALLTIME:-04:00:00}"
@@ -46,7 +47,7 @@ if [[ "${use_local_submit}" == "1" ]]; then
     TARGETS=\"${TARGETS}\" RUN_MODE=\"${RUN_MODE}\" sbatch \
       --job-name=${JOB_NAME} \
       --partition=${GPU_PARTITION} \
-      --gres=gpu:${GPUS} \
+      --gres=${GRES} \
       --cpus-per-task=${CPUS_PER_TASK} \
       --mem=${MEMORY} \
       --time=${WALLTIME} \
@@ -60,7 +61,7 @@ else
     TARGETS=\"${TARGETS}\" RUN_MODE=\"${RUN_MODE}\" sbatch \
       --job-name=${JOB_NAME} \
       --partition=${GPU_PARTITION} \
-      --gres=gpu:${GPUS} \
+      --gres=${GRES} \
       --cpus-per-task=${CPUS_PER_TASK} \
       --mem=${MEMORY} \
       --time=${WALLTIME} \

@@ -128,6 +128,10 @@ run_wan22() {
   mkdir -p "${model_dir}"
   local save_file="${model_dir}/${WAN22_TASK}_${RUN_ID}.mp4"
   cd "${PROJECT_DIR}/third_party/Wan2.2"
+  echo "wan22 python: $(which python)"
+  echo "wan22 submodule head: $(git rev-parse --short HEAD || true)"
+  echo "wan22 wan/__init__.py (first 20 lines):"
+  sed -n '1,20p' wan/__init__.py || true
   if [[ "${WAN22_TASK}" == "i2v-A14B" ]]; then
     if [[ ! -f "${WAN22_IMAGE}" ]]; then
       echo "Wan2.2 image not found: ${WAN22_IMAGE}" >&2
