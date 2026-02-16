@@ -31,6 +31,8 @@ CONDA_HOOK_BIN="${CONDA_HOOK_BIN:-/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda}"
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
 STRICT_FLASH_ATTN="${STRICT_FLASH_ATTN:-0}"
 INSTALL_DOWNLOAD_TOOLS="${INSTALL_DOWNLOAD_TOOLS:-1}"
+HF_HUB_VERSION="${HF_HUB_VERSION:-0.33.4}"
+HF_TRANSFER_VERSION="${HF_TRANSFER_VERSION:-0.1.9}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 TORCH_VERSION="${TORCH_VERSION:-2.6.0}"
 TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.21.0}"
@@ -224,7 +226,9 @@ fi
 
 if [[ "${INSTALL_DOWNLOAD_TOOLS}" == "1" ]]; then
   say "Install Download Tools"
-  python -m pip install -U "huggingface_hub[cli]" hf_transfer
+  python -m pip install \
+    "huggingface-hub[cli]==${HF_HUB_VERSION}" \
+    "hf_transfer==${HF_TRANSFER_VERSION}"
 fi
 
 say "Done"
