@@ -29,6 +29,7 @@ WAN22_ENV="${WAN22_ENV:-${PROJECT_DIR}/.mamba/wan2}"
 WAN22_TASK="${WAN22_TASK:-t2v-A14B}"
 WAN22_SIZE="${WAN22_SIZE:-1280*720}"
 WAN22_CKPT_DIR="${WAN22_CKPT_DIR:-${MODEL_BASE}/Wan2.2-T2V-A14B}"
+WAN22_IMAGE="${WAN22_IMAGE:-${PROJECT_DIR}/third_party/Wan2.2/examples/i2v_input.JPG}"
 WAN22_PROMPT="${WAN22_PROMPT:-Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.}"
 
 WAN21_ENV="${WAN21_ENV:-${PROJECT_DIR}/.mamba/wan21}"
@@ -112,6 +113,11 @@ run_wan22() {
   log "Running Wan2.2 inference"
   activate_env_path "${WAN22_ENV}"
 
+  if [[ "${WAN22_TASK}" != "t2v-A14B" && "${WAN22_TASK}" != "i2v-A14B" ]]; then
+    echo "Wan2.2 runner only supports t2v-A14B or i2v-A14B. Got: ${WAN22_TASK}" >&2
+    exit 1
+  fi
+
   if [[ ! -d "${WAN22_CKPT_DIR}" ]]; then
     echo "Wan2.2 checkpoint dir not found: ${WAN22_CKPT_DIR}" >&2
     exit 1
@@ -122,25 +128,46 @@ run_wan22() {
   mkdir -p "${model_dir}"
   local save_file="${model_dir}/${WAN22_TASK}_${RUN_ID}.mp4"
   cd "${PROJECT_DIR}/third_party/Wan2.2"
-  python generate.py \
-    --task "${WAN22_TASK}" \
-    --size "${WAN22_SIZE}" \
-    --ckpt_dir "${WAN22_CKPT_DIR}" \
-    --offload_model True \
-    --convert_model_dtype \
-    --prompt "${WAN22_PROMPT}" \
-    --save_file "${save_file}"
+  if [[ "${WAN22_TASK}" == "i2v-A14B" ]]; then
+    if [[ ! -f "${WAN22_IMAGE}" ]]; then
+      echo "Wan2.2 image not found: ${WAN22_IMAGE}" >&2
+      exit 1
+    fi
+    python generate.py \
+      --task "${WAN22_TASK}" \
+      --size "${WAN22_SIZE}" \
+      --ckpt_dir "${WAN22_CKPT_DIR}" \
+      --image "${WAN22_IMAGE}" \
+      --offload_model True \
+      --convert_model_dtype \
+      --prompt "${WAN22_PROMPT}" \
+      --save_file "${save_file}"
+  else
+    python generate.py \
+      --task "${WAN22_TASK}" \
+      --size "${WAN22_SIZE}" \
+      --ckpt_dir "${WAN22_CKPT_DIR}" \
+      --offload_model True \
+      --convert_model_dtype \
+      --prompt "${WAN22_PROMPT}" \
+      --save_file "${save_file}"
+  fi
 }
 
 run_wan21() {
   log "Running Wan2.1 inference"
   activate_env_path "${WAN21_ENV}"
 
+  if [[ "${WAN21_TASK}" != "t2v-14B" && "${WAN21_TASK}" != "i2v-14B" ]]; then
+    echo "Wan2.1 runner only supports t2v-14B or i2v-14B. Got: ${WAN21_TASK}" >&2
+    exit 1
+  fi
+
   if [[ ! -d "${WAN21_CKPT_DIR}" ]]; then
     echo "Wan2.1 checkpoint dir not found: ${WAN21_CKPT_DIR}" >&2
     exit 1
   fi
-  if [[ ! -f "${WAN21_IMAGE}" ]]; then
+  if [[ "${WAN21_TASK}" == "i2v-14B" && ! -f "${WAN21_IMAGE}" ]]; then
     echo "Wan2.1 image not found: ${WAN21_IMAGE}" >&2
     exit 1
   fi
@@ -150,15 +177,26 @@ run_wan21() {
   mkdir -p "${model_dir}"
   local save_file="${model_dir}/${WAN21_TASK}_${RUN_ID}.mp4"
   cd "${PROJECT_DIR}/third_party/Wan2.1"
-  python generate.py \
-    --task "${WAN21_TASK}" \
-    --size "${WAN21_SIZE}" \
-    --ckpt_dir "${WAN21_CKPT_DIR}" \
-    --image "${WAN21_IMAGE}" \
-    --offload_model True \
-    --t5_cpu \
-    --prompt "${WAN21_PROMPT}" \
-    --save_file "${save_file}"
+  if [[ "${WAN21_TASK}" == "i2v-14B" ]]; then
+    python generate.py \
+      --task "${WAN21_TASK}" \
+      --size "${WAN21_SIZE}" \
+      --ckpt_dir "${WAN21_CKPT_DIR}" \
+      --image "${WAN21_IMAGE}" \
+      --offload_model True \
+      --t5_cpu \
+      --prompt "${WAN21_PROMPT}" \
+      --save_file "${save_file}"
+  else
+    python generate.py \
+      --task "${WAN21_TASK}" \
+      --size "${WAN21_SIZE}" \
+      --ckpt_dir "${WAN21_CKPT_DIR}" \
+      --offload_model True \
+      --t5_cpu \
+      --prompt "${WAN21_PROMPT}" \
+      --save_file "${save_file}"
+  fi
 }
 
 prepare_lvp_ckpts() {

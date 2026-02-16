@@ -44,6 +44,20 @@ Notes:
 - `RUN_MODE=smoke` runs LVP with `wan_toy` + `dummy` dataset for fast validation.
 - `RUN_MODE=full` runs LVP with `wan_i2v` and expects dataset/checkpoints to be ready.
 
+Prepare dataset/task layout (model -> dataset -> {t2v,i2v}):
+1. Create a tuple manifest (`.jsonl` or `.csv`) with fields:
+   - required: `sample_id` (or `id`), `prompt`, `ground_truth_video`
+   - optional: `i2v_image` (if omitted, first frame is extracted from `ground_truth_video`)
+2. Run:
+   `python scripts/prepare_inference_layout.py --manifest /path/to/tuples.jsonl --run-root /n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> --dataset-name <dataset_name>`
+3. Output structure includes:
+   - `.../datasets/<dataset>/samples/<sample_id>/` (shared prompt/GT/image assets)
+   - `.../<model>/<dataset>/t2v/` and `.../<model>/<dataset>/i2v/`
+   - task manifests: `.../<model>/<dataset>/<task>/inputs/manifest.jsonl`
+
+Example JSONL row:
+`{"sample_id":"clip_0001","prompt":"A robot arm stacks blocks.","ground_truth_video":"/n/netscratch/.../gt/clip_0001.mp4"}`
+
 Fetch outputs:
 1. `bash scripts/fetch_run.sh <run_id>`
 
@@ -210,3 +224,5 @@ WE ARE NOT USING FLASH ATTENTION IN ANY MODEL, SO UP THE GPU AND H200 count.
 
 PLAN:
 great, this is good, now lets see if we can run that inference script because eventually I want to have runs in the scratch space on remote broken doesn into model which breaks in 2.2 2.1 lvp each of which breaks into a dataset which each break into img to video and text to video. But, that structure will have to be created by running these scripts that put the outputs in exactly the right places and get the inputs from exactly the right place to match. I am going to load in tuples of prompts, ground truth data into the scratch space somewhere and then want scripts that for each goes through and runs+ records the prompt to video and then takes out first frame and runs a img to video as well and then stores in the format that I wanted (adding the groudtruth to there as well). 
+
+ls -ltr ~/projects/3dConsistency/runs/20260215_233048/slurm-*.out
