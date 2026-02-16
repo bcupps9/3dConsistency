@@ -31,6 +31,8 @@ TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
 STRICT_FLASH_ATTN="${STRICT_FLASH_ATTN:-1}"
 INSTALL_DOWNLOAD_TOOLS="${INSTALL_DOWNLOAD_TOOLS:-1}"
+HF_HUB_VERSION="${HF_HUB_VERSION:-0.33.4}"
+HF_TRANSFER_VERSION="${HF_TRANSFER_VERSION:-0.1.9}"
 MAX_JOBS="${MAX_JOBS:-8}"
 FLASH_ATTN_FORCE_SOURCE="${FLASH_ATTN_FORCE_SOURCE:-1}"
 FLASH_ATTN_VERSION="${FLASH_ATTN_VERSION:-}"
@@ -204,7 +206,9 @@ fi
 
 if [[ "${INSTALL_DOWNLOAD_TOOLS}" == "1" ]]; then
   say "Install Download Tools"
-  python -m pip install -U "huggingface_hub[cli]" hf_transfer
+  python -m pip install \
+    "huggingface-hub[cli]==${HF_HUB_VERSION}" \
+    "hf_transfer==${HF_TRANSFER_VERSION}"
 fi
 
 say "Done"
