@@ -7,3 +7,6 @@
 [submodule "third_party/Wan2.1"]
 	path = third_party/Wan2.1
 	url = https://github.com/bcupps9/Wan2.1.git
+[submodule "third_party/physics-IQ-Benchmark"]
+	path = third_party/physics-IQ-Benchmark
+	url = https://github.com/bcupps9/physics-IQ-Benchmark.git
