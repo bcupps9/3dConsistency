@@ -58,6 +58,22 @@ Prepare dataset/task layout (model -> dataset -> {t2v,i2v}):
 Example JSONL row:
 `{"sample_id":"clip_0001","prompt":"A robot arm stacks blocks.","ground_truth_video":"/n/netscratch/.../gt/clip_0001.mp4"}`
 
+WISA note (HF Arrow cache):
+- You do not need to change `prepare_inference_layout.py`.
+- Build a JSONL manifest from WISA first:
+  `python scripts/build_wisa_manifest.py --output-manifest /n/netscratch/ydu_lab/Lab/bcupps/results/<run_id>/manifests/wisa80k.jsonl --cache-dir /n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/.hf --limit 100`
+
+Run layout-driven batch inference (Wan2.2 + Wan2.1):
+1. After layout prep, submit:
+   `GPU_PARTITION=<partition> DATASET_NAMES=<dataset_a,dataset_b> TARGETS=wan22,wan21 TASKS=t2v,i2v RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> bash scripts/submit_slurm_layout.sh <run_id>`
+2. Smoke with only first sample per manifest:
+   `MAX_SAMPLES=1 GPU_PARTITION=<partition> DATASET_NAMES=<dataset_a,dataset_b> TARGETS=wan22,wan21 TASKS=t2v,i2v RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> bash scripts/submit_slurm_layout.sh <run_id>`
+
+Notes:
+- `scripts/remote_infer_layout.sh` consumes `.../<model>/<dataset>/<task>/inputs/manifest.jsonl` from `prepare_inference_layout.py`.
+- Outputs are written exactly to `output_video` paths in those manifests.
+- This runner currently supports `wan22` and `wan21` targets.
+
 Fetch outputs:
 1. `bash scripts/fetch_run.sh <run_id>`
 
@@ -229,5 +245,22 @@ ls -ltr ~/projects/3dConsistency/runs/20260215_233048/slurm-*.out
 
 sbatch -p gpu_h200 --gres=gpu:nvidia_h200:1 --mem=16G --wrap="nvidia-smi -L; sleep 30"
 
+On remote, data has been downloaded:
+
+For Physics IQ benchmark
+0391_video-masks_30FPS_perspective-left_take-2_trimmed-weight-on-pillow.mp4
+0392_video-masks_30FPS_perspective-center_take-2_trimmed-weight-on-pillow.mp4
+0393_video-masks_30FPS_perspective-right_take-2_trimmed-weight-on-pillow.mp4
+0394_video-masks_30FPS_perspective-left_take-2_trimmed-weight-protects-duck.mp4
+0395_video-masks_30FPS_perspective-center_take-2_trimmed-weight-protects-duck.mp4
+0396_video-masks_30FPS_perspective-right_take-2_trimmed-weight-protects-duck.mp4
+(/n/home12/bcupps/projects/3dConsistency/.mamba/wan2) [bcupps@boslogin07 30FPS]$ pwd
+/n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/physics-IQ-benchmark/video-masks/real/30FPS
+
+For WISA: 
+et_size": 156920678, "size_in_bytes": 375084174}(/n/home12/bcupps/projects/3dConsistency/.mamba/wan2) [bcuc1442f5]$ ^C07 66e0fd0d6963a76999d0653b5d2d0e3b5c
+(/n/home12/bcupps/projects/3dConsistency/.mamba/wan2) [bcupps@boslogin07 66e0fd0d6963a76999d0653b5d2d0e3b5c1442f5]$ pwd
+/n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/.hf/datasets/qihoo360___wisa-80_k/default/0.0.0/66e0fd0d6963a76999d0653b5d2d0e3b5c1442f5
 
 
+We are 
