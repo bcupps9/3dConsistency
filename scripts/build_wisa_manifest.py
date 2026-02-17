@@ -27,6 +27,7 @@ from datasets import Dataset, concatenate_datasets, load_dataset, load_from_disk
 DEFAULT_PROMPT_KEYS = (
     "prompt",
     "caption",
+    "captions",
     "description",
     "video_description",
     "video_caption",
@@ -38,6 +39,7 @@ DEFAULT_VIDEO_KEYS = (
     "video",
     "video_path",
     "path",
+    "video_name",
     "filename",
     "file_name",
     "video_filename",
