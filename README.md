@@ -263,4 +263,7 @@ et_size": 156920678, "size_in_bytes": 375084174}(/n/home12/bcupps/projects/3dCon
 /n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/.hf/datasets/qihoo360___wisa-80_k/default/0.0.0/66e0fd0d6963a76999d0653b5d2d0e3b5c1442f5
 
 
-We are 
+Need to ammend the wan2 env that I messed up trying to download WISA data in
+conda activate /n/home12/bcupps/projects/3dConsistency/.mamba/wan2
+python -m pip install --force-reinstall "huggingface_hub==0.36.2" "hf_xet"
+python -m pip check
