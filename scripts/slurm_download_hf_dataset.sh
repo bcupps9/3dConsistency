@@ -15,16 +15,19 @@ set -euo pipefail
 #     --mem=32G \
 #     --time=48:00:00 \
 #     --output=/n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/download-%j.out \
-#     --export=ALL,REPO_ID=qihoo360/WISA-80K,REPO_TYPE=dataset,DEST=/n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/WISA-80K,ALLOW_PATTERNS='data/**',HF_TOKEN_FILE=/n/home12/bcupps/hf_key.txt,HF_ENV_NAME=hf_dl \
+#     --export=ALL,REPO_ID=qihoo360/WISA-80K,REPO_TYPE=dataset,DEST=/n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/WISA-80K,ALLOW_PATTERNS='data/**',HF_ENV_NAME=hf_dl,HF_TOKEN=<your_token> \
 #     scripts/slurm_download_hf_dataset.sh
+#
+# Or pass token as positional argument:
+#   sbatch ... scripts/slurm_download_hf_dataset.sh <your_token>
 
 REPO_ID="${REPO_ID:-qihoo360/WISA-80K}"
 REPO_TYPE="${REPO_TYPE:-dataset}"
 DEST="${DEST:-/n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/WISA-80K}"
 ALLOW_PATTERNS="${ALLOW_PATTERNS:-data/**}" # comma-separated patterns
 
-# Auth: prefer HF_TOKEN env, otherwise read from HF_TOKEN_FILE.
-HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/hf_key.txt}"
+# Auth: pass HF token via HF_TOKEN env or positional argument.
+HF_TOKEN_ARG="${1:-}"
 
 # Env/bootstrap
 HF_ENV_NAME="${HF_ENV_NAME:-hf_dl}"
@@ -54,15 +57,12 @@ if [[ "${INSTALL_DL_DEPS}" == "1" ]]; then
   python -m pip install -U huggingface_hub hf_xet
 fi
 
-if [[ -z "${HF_TOKEN:-}" ]]; then
-  if [[ -f "${HF_TOKEN_FILE}" ]]; then
-    export HF_TOKEN
-    HF_TOKEN="$(<"${HF_TOKEN_FILE}")"
-  fi
+if [[ -n "${HF_TOKEN_ARG}" ]]; then
+  export HF_TOKEN="${HF_TOKEN_ARG}"
 fi
 
 if [[ -z "${HF_TOKEN:-}" ]]; then
-  echo "HF token not set. Export HF_TOKEN or provide HF_TOKEN_FILE." >&2
+  echo "HF token not set. Pass it as positional arg or export HF_TOKEN in sbatch --export." >&2
   exit 1
 fi
 
