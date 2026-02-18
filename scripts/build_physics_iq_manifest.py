@@ -20,7 +20,7 @@ import json
 import random
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Sequence
 
 
 NOISE_TOKENS = {
@@ -94,11 +94,35 @@ def _build_indexes(search_roots: Iterable[Path]) -> tuple[Dict[str, List[Path]],
     return by_basename, by_normalized
 
 
+def _rank_match(path: Path, prefer_substrings: Sequence[str], take_filter: str) -> tuple[int, int, int, str]:
+    s = str(path).lower()
+    take_rank = 1
+    if take_filter and take_filter.lower() in s:
+        take_rank = 0
+    pref_rank = len(prefer_substrings)
+    for i, sub in enumerate(prefer_substrings):
+        if sub and sub.lower() in s:
+            pref_rank = i
+            break
+    depth_rank = len(path.parts)
+    len_rank = len(s)
+    return (take_rank, pref_rank, depth_rank, len_rank)
+
+
+def _pick_best_match(matches: List[Path], prefer_substrings: Sequence[str], take_filter: str) -> Path | None:
+    if not matches:
+        return None
+    ranked = sorted(matches, key=lambda p: _rank_match(p, prefer_substrings, take_filter))
+    return ranked[0]
+
+
 def _resolve_video_path(
     row: dict,
     filename_columns: list[str],
     by_basename: Dict[str, List[Path]],
     by_normalized: Dict[str, List[Path]],
+    prefer_substrings: Sequence[str],
+    take_filter: str,
 ) -> Path | None:
     candidates: list[str] = []
     for col in filename_columns:
@@ -115,14 +139,16 @@ def _resolve_video_path(
 
         for name in names_to_try:
             matches = by_basename.get(name, [])
-            if len(matches) == 1:
-                return matches[0]
+            best = _pick_best_match(matches, prefer_substrings, take_filter)
+            if best is not None:
+                return best
 
         for name in names_to_try:
             norm = _normalize_name(name)
             nmatches = by_normalized.get(norm, [])
-            if len(nmatches) == 1:
-                return nmatches[0]
+            best = _pick_best_match(nmatches, prefer_substrings, take_filter)
+            if best is not None:
+                return best
 
     return None
 
@@ -159,6 +185,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="Max rows to emit (0 means all)")
     parser.add_argument("--shuffle", action="store_true", help="Shuffle before limit")
     parser.add_argument("--seed", type=int, default=0, help="Shuffle seed")
+    parser.add_argument(
+        "--prefer-path-substrings",
+        default="full-videos,split-videos,video-masks",
+        help="Preferred path substrings in priority order when multiple videos match.",
+    )
+    parser.add_argument(
+        "--debug-misses",
+        type=int,
+        default=5,
+        help="Print up to this many unresolved rows for debugging (0 disables).",
+    )
     return parser.parse_args()
 
 
@@ -172,14 +209,13 @@ def main() -> int:
 
     filename_columns = _split_csv_arg(args.filename_columns)
     search_roots = [Path(x).expanduser().resolve() for x in _split_csv_arg(args.video_search_roots)]
+    prefer_substrings = _split_csv_arg(args.prefer_path_substrings)
     by_basename, by_normalized = _build_indexes(search_roots)
 
     indices = list(range(len(rows)))
     if args.shuffle:
         rng = random.Random(args.seed)
         rng.shuffle(indices)
-    if args.limit > 0:
-        indices = indices[: args.limit]
 
     out_path = Path(args.output_manifest).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,6 +223,8 @@ def main() -> int:
     wrote = 0
     skipped = 0
     seen: set[str] = set()
+    debug_miss_count = 0
+    considered_after_filter = 0
 
     with out_path.open("w", encoding="utf-8") as f:
         for out_idx, idx in enumerate(indices, 1):
@@ -202,9 +240,23 @@ def main() -> int:
                 if args.take_filter.lower() not in probe:
                     skipped += 1
                     continue
+            considered_after_filter += 1
+            if args.limit > 0 and considered_after_filter > args.limit:
+                break
 
-            video_path = _resolve_video_path(row, filename_columns, by_basename, by_normalized)
+            video_path = _resolve_video_path(
+                row,
+                filename_columns,
+                by_basename,
+                by_normalized,
+                prefer_substrings,
+                args.take_filter,
+            )
             if video_path is None or not video_path.is_file():
+                if args.debug_misses > 0 and debug_miss_count < args.debug_misses:
+                    debug_miss_count += 1
+                    raw_names = [str(row.get(c, "")).strip() for c in filename_columns if row.get(c)]
+                    print(f"[debug miss {debug_miss_count}] row_index={idx} names={raw_names}")
                 skipped += 1
                 continue
 
@@ -234,6 +286,7 @@ def main() -> int:
 
     print(f"Wrote {wrote} rows to {out_path}")
     print(f"Skipped {skipped} rows (missing prompt/video/match)")
+    print(f"Considered rows after take-filter: {considered_after_filter}")
     print(f"Indexed {sum(len(v) for v in by_basename.values())} mp4 files from search roots")
     return 0
 
