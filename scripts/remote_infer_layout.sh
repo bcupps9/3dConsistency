@@ -145,6 +145,10 @@ import sys
 manifest_path = sys.argv[1]
 max_samples = int(sys.argv[2])
 
+# Use a non-whitespace delimiter so empty fields (e.g., t2v image_path) are
+# preserved when parsed by bash `read`.
+DELIM = "\x1f"
+
 count = 0
 with open(manifest_path, "r", encoding="utf-8") as handle:
     for line in handle:
@@ -156,7 +160,7 @@ with open(manifest_path, "r", encoding="utf-8") as handle:
         prompt = str(row.get("prompt", "")).replace("\t", " ").replace("\n", " ")
         image_path = str(row.get("image_path", "")).replace("\t", " ")
         output_video = str(row.get("output_video", "")).replace("\t", " ")
-        print("\t".join([sample_id, prompt, image_path, output_video]))
+        print(DELIM.join([sample_id, prompt, image_path, output_video]))
         count += 1
         if max_samples > 0 and count >= max_samples:
             break
@@ -199,7 +203,7 @@ run_wan22_manifest() {
   fi
 
   local sample_count=0
-  while IFS=$'\t' read -r sample_id prompt image_path output_video; do
+  while IFS=$'\x1f' read -r sample_id prompt image_path output_video; do
     [[ -z "${sample_id}" ]] && continue
     sample_count=$((sample_count + 1))
 
@@ -280,7 +284,7 @@ run_wan21_manifest() {
   fi
 
   local sample_count=0
-  while IFS=$'\t' read -r sample_id prompt image_path output_video; do
+  while IFS=$'\x1f' read -r sample_id prompt image_path output_video; do
     [[ -z "${sample_id}" ]] && continue
     sample_count=$((sample_count + 1))
 
