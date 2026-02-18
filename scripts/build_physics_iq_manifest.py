@@ -24,6 +24,14 @@ from typing import Dict, Iterable, List
 
 
 NOISE_TOKENS = {
+    "video",
+    "videos",
+    "mask",
+    "masks",
+    "full",
+    "split",
+    "switch",
+    "frames",
     "fullvideos",
     "splitvideos",
     "videomasks",
@@ -36,6 +44,9 @@ NOISE_TOKENS = {
     "16fps",
     "24fps",
     "30fps",
+    "take",
+    "1",
+    "2",
 }
 
 
@@ -59,6 +70,11 @@ def _split_csv_arg(raw: str) -> list[str]:
 
 def _normalize_name(name: str) -> str:
     stem = Path(name).stem.lower()
+    # Remove common container/source tokens and fps/take markers that may be inserted
+    # by downloaded filenames but absent in descriptions.csv.
+    stem = re.sub(r"(?:^|[_-])(?:full[-_]?videos|split[-_]?videos|video[-_]?masks|switch[-_]?frames)(?:[_-]|$)", "_", stem)
+    stem = re.sub(r"(?:^|[_-])(?:8|16|24|30)fps(?:[_-]|$)", "_", stem)
+    stem = re.sub(r"(?:^|[_-])take[-_]?[12](?:[_-]|$)", "_", stem)
     parts = re.split(r"[^a-z0-9]+", stem)
     filtered = [p for p in parts if p and p not in NOISE_TOKENS]
     return "".join(filtered)
