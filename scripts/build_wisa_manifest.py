@@ -45,7 +45,7 @@ DEFAULT_VIDEO_KEYS = (
     "video_filename",
     "video_file",
 )
-DEFAULT_ID_KEYS = ("sample_id", "id", "uid", "name", "video_id", "sha256")
+DEFAULT_ID_KEYS = ("sample_id", "id", "uid", "name", "video_id", "sha256", "video_name")
 
 
 def _parse_list(raw: str) -> list[str]:
@@ -162,6 +162,16 @@ def parse_args() -> argparse.Namespace:
         help="Optional directory containing local .arrow files. Uses no HF hub call.",
     )
     parser.add_argument(
+        "--json-path",
+        default=None,
+        help="Optional path to WISA metadata JSON (e.g., data/wisa-80k.json).",
+    )
+    parser.add_argument(
+        "--json-records-key",
+        default="data",
+        help="If --json-path is an object, which key contains the list of records.",
+    )
+    parser.add_argument(
         "--prompt-keys",
         default=",".join(DEFAULT_PROMPT_KEYS),
         help="Comma-separated preferred prompt columns.",
@@ -224,6 +234,32 @@ def _load_arrow_dir(arrow_dir: Path) -> Dataset:
     return concatenate_datasets(datasets)
 
 
+def _load_json_rows(json_path: Path, records_key: str) -> list[dict]:
+    with json_path.open("r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        candidate = payload.get(records_key)
+        if isinstance(candidate, list):
+            rows = candidate
+        else:
+            raise ValueError(
+                f"{json_path}: JSON object does not contain list key '{records_key}'. "
+                f"Available keys: {list(payload.keys())[:20]}"
+            )
+    else:
+        raise ValueError(f"{json_path}: expected JSON list or object, got {type(payload).__name__}")
+
+    out: list[dict] = []
+    for i, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            raise ValueError(f"{json_path}: row {i} is {type(row).__name__}, expected object")
+        out.append(row)
+    return out
+
+
 def _build_basename_index(search_roots: list[Path]) -> Dict[str, Path]:
     index: Dict[str, Path] = {}
     for root in search_roots:
@@ -257,12 +293,14 @@ def main() -> int:
         ]
     basename_index = _build_basename_index(search_roots) if search_roots else None
 
-    mode_count = int(bool(args.dataset_path)) + int(bool(args.arrow_dir))
+    mode_count = int(bool(args.dataset_path)) + int(bool(args.arrow_dir)) + int(bool(args.json_path))
     if mode_count > 1:
-        raise ValueError("Use only one of --dataset-path or --arrow-dir.")
+        raise ValueError("Use only one of --dataset-path, --arrow-dir, or --json-path.")
 
     if args.arrow_dir:
         ds = _load_arrow_dir(Path(args.arrow_dir).expanduser().resolve())
+    elif args.json_path:
+        ds = _load_json_rows(Path(args.json_path).expanduser().resolve(), args.json_records_key)
     elif args.dataset_path:
         ds = load_from_disk(args.dataset_path)
         if hasattr(ds, "keys"):

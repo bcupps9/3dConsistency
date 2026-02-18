@@ -267,3 +267,11 @@ Need to ammend the wan2 env that I messed up trying to download WISA data in
 conda activate /n/home12/bcupps/projects/3dConsistency/.mamba/wan2
 python -m pip install --force-reinstall "huggingface_hub==0.36.2" "hf_xet"
 python -m pip check
+
+okay, now time to make the manifests because we have everything required: on the WISA side:
+(/n/home12/bcupps/projects/3dConsistency/.mamba/wan2) [bcupps@holylogin08 data]$ ls
+videos  wisa-80k.json
+
+on the physics-IQ side:
+(/n/home12/bcupps/projects/3dConsistency/.mamba/wan2) [bcupps@holylogin08 physics-IQ-benchmark]$ ls
+full-videos  split-videos  switch-frames  video-masks
