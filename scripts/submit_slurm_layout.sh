@@ -13,7 +13,7 @@ RUN_ID="${1:-$(date +%Y%m%d_%H%M%S)}"
 DATASET_NAMES="${DATASET_NAMES:-}"
 
 # Supported targets/tasks for layout runner.
-TARGETS="${TARGETS:-wan22,wan21}"
+TARGETS="${TARGETS:-wan22,wan21,lvp}"
 TASKS="${TASKS:-t2v,i2v}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-0}"

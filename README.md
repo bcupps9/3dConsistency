@@ -63,16 +63,17 @@ WISA note (HF Arrow cache):
 - Build a JSONL manifest from WISA first:
   `python scripts/build_wisa_manifest.py --output-manifest /n/netscratch/ydu_lab/Lab/bcupps/results/<run_id>/manifests/wisa80k.jsonl --cache-dir /n/netscratch/ydu_lab/Lab/bcupps/datasets/raw/.hf --limit 100`
 
-Run layout-driven batch inference (Wan2.2 + Wan2.1):
+Run layout-driven batch inference (Wan2.2 + Wan2.1 + LVP):
 1. After layout prep, submit:
-   `GPU_PARTITION=<partition> DATASET_NAMES=<dataset_a,dataset_b> TARGETS=wan22,wan21 TASKS=t2v,i2v RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> bash scripts/submit_slurm_layout.sh <run_id>`
+   `GPU_PARTITION=<partition> DATASET_NAMES=<dataset_a,dataset_b> TARGETS=wan22,wan21,lvp TASKS=t2v,i2v RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> bash scripts/submit_slurm_layout.sh <run_id>`
 2. Smoke with only first sample per manifest:
-   `MAX_SAMPLES=1 GPU_PARTITION=<partition> DATASET_NAMES=<dataset_a,dataset_b> TARGETS=wan22,wan21 TASKS=t2v,i2v RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> bash scripts/submit_slurm_layout.sh <run_id>`
+   `MAX_SAMPLES=1 GPU_PARTITION=<partition> DATASET_NAMES=<dataset_a,dataset_b> TARGETS=wan22,wan21,lvp TASKS=t2v,i2v RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/<run_id> bash scripts/submit_slurm_layout.sh <run_id>`
 
 Notes:
 - `scripts/remote_infer_layout.sh` consumes `.../<model>/<dataset>/<task>/inputs/manifest.jsonl` from `prepare_inference_layout.py`.
 - Outputs are written exactly to `output_video` paths in those manifests.
-- This runner currently supports `wan22` and `wan21` targets.
+- LVP runs through the same layout contract and writes to `.../lvp/<dataset>/<task>/outputs/*.mp4`.
+- LVP uses the `wan_i2v` inference path for both task slots; `t2v` is run with reduced history guidance (`LVP_HIST_GUIDANCE_T2V=0.0` by default).
 
 Fetch outputs:
 1. `bash scripts/fetch_run.sh <run_id>`
@@ -275,3 +276,7 @@ videos  wisa-80k.json
 on the physics-IQ side:
 (/n/home12/bcupps/projects/3dConsistency/.mamba/wan2) [bcupps@holylogin08 physics-IQ-benchmark]$ ls
 full-videos  split-videos  switch-frames  video-masks
+
+RUN_ID=20260218_batch1
+RUN_ROOT=/n/netscratch/ydu_lab/Lab/bcupps/results/$RUN_ID
+MANIFEST_DIR=$RUN_ROOT/manifests

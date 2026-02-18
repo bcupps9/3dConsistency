@@ -16,9 +16,9 @@ RUN_ROOT="${RUN_ROOT:-${SCRATCH_BASE}/${RUN_ID}}"
 DATASET_NAMES="${DATASET_NAMES:-}"
 
 # Comma-separated list of targets/tasks to run in sequence.
-# Supported targets: wan22,wan21
+# Supported targets: wan22,wan21,lvp
 # Supported tasks: t2v,i2v
-TARGETS="${TARGETS:-wan22,wan21}"
+TARGETS="${TARGETS:-wan22,wan21,lvp}"
 TASKS="${TASKS:-t2v,i2v}"
 
 # Optional controls.
@@ -38,6 +38,19 @@ WAN21_T2V_CKPT_DIR="${WAN21_T2V_CKPT_DIR:-${MODEL_BASE}/Wan2.1-T2V-14B}"
 WAN21_I2V_CKPT_DIR="${WAN21_I2V_CKPT_DIR:-${MODEL_BASE}/Wan2.1-I2V-14B-480P}"
 WAN21_SIZE_T2V="${WAN21_SIZE_T2V:-832*480}"
 WAN21_SIZE_I2V="${WAN21_SIZE_I2V:-832*480}"
+
+LVP_ENV_NAME="${LVP_ENV_NAME:-ei_world_model}"
+LVP_TUNED_CKPT="${LVP_TUNED_CKPT:-${MODEL_BASE}/LVP/data/ckpts/lvp_14B.ckpt}"
+LVP_WAN21_DIR="${LVP_WAN21_DIR:-${MODEL_BASE}/Wan2.1-I2V-14B-480P}"
+LVP_DATASET="${LVP_DATASET:-ours_test}"
+LVP_FPS="${LVP_FPS:-16}"
+LVP_N_FRAMES="${LVP_N_FRAMES:-49}"
+LVP_HEIGHT="${LVP_HEIGHT:-480}"
+LVP_WIDTH="${LVP_WIDTH:-832}"
+LVP_LIMIT_BATCH="${LVP_LIMIT_BATCH:-null}"
+LVP_LANG_GUIDANCE="${LVP_LANG_GUIDANCE:-2.5}"
+LVP_HIST_GUIDANCE_I2V="${LVP_HIST_GUIDANCE_I2V:-1.5}"
+LVP_HIST_GUIDANCE_T2V="${LVP_HIST_GUIDANCE_T2V:-0.0}"
 
 CONDA_HOOK_BIN="${CONDA_HOOK_BIN:-/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda}"
 MINIFORGE_MODULE="${MINIFORGE_MODULE:-Miniforge3/24.11.3-fasrc02}"
@@ -91,6 +104,35 @@ activate_env_path() {
     exit 1
   fi
   conda activate "${env_path}"
+}
+
+activate_env_name() {
+  local env_name="$1"
+  conda activate "${env_name}"
+}
+
+prepare_lvp_ckpts() {
+  local lvp_root="${PROJECT_DIR}/third_party/large-video-planner"
+  local ckpt_root="${lvp_root}/data/ckpts"
+  mkdir -p "${ckpt_root}"
+
+  if [[ ! -e "${ckpt_root}/lvp_14B.ckpt" ]]; then
+    if [[ -f "${LVP_TUNED_CKPT}" ]]; then
+      ln -s "${LVP_TUNED_CKPT}" "${ckpt_root}/lvp_14B.ckpt"
+    else
+      echo "LVP tuned checkpoint missing: ${LVP_TUNED_CKPT}" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ ! -e "${ckpt_root}/Wan2.1-I2V-14B-480P" ]]; then
+    if [[ -d "${LVP_WAN21_DIR}" ]]; then
+      ln -s "${LVP_WAN21_DIR}" "${ckpt_root}/Wan2.1-I2V-14B-480P"
+    else
+      echo "Wan2.1 base checkpoint dir missing for LVP: ${LVP_WAN21_DIR}" >&2
+      exit 1
+    fi
+  fi
 }
 
 manifest_rows() {
@@ -283,6 +325,183 @@ run_wan21_manifest() {
   log "Finished wan21/${dataset_name}/${task} (${sample_count} samples)"
 }
 
+run_lvp_manifest() {
+  local dataset_name="$1"
+  local task="$2"
+  local manifest_path="${RUN_ROOT}/lvp/${dataset_name}/${task}/inputs/manifest.jsonl"
+
+  if [[ ! -f "${manifest_path}" ]]; then
+    log "Skipping lvp/${dataset_name}/${task}: manifest missing (${manifest_path})"
+    return 0
+  fi
+
+  local runtime_dir="${RUN_ROOT}/lvp/${dataset_name}/${task}/runtime"
+  local metadata_csv="${runtime_dir}/metadata.csv"
+  local lvp_log="${RUN_ROOT}/lvp/${dataset_name}/${task}/logs/lvp_run.log"
+  local hydra_dir="${RUN_ROOT}/lvp/${dataset_name}/${task}/logs/hydra_${RUN_ID}"
+  mkdir -p "${runtime_dir}" "$(dirname "${lvp_log}")" "${hydra_dir}"
+
+  if ! python - "$manifest_path" "$metadata_csv" "$task" "$MAX_SAMPLES" "$LVP_HEIGHT" "$LVP_WIDTH" "$LVP_N_FRAMES" "$LVP_FPS" <<'PY'
+import csv
+import json
+import os
+import sys
+
+manifest_path, output_csv, task, max_samples, height, width, n_frames, fps = sys.argv[1:]
+max_samples = int(max_samples)
+
+rows = []
+skipped = 0
+with open(manifest_path, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.strip()
+        if not line:
+            continue
+        row = json.loads(line)
+
+        prompt = str(row.get("prompt", "")).strip()
+        output_video = str(row.get("output_video", "")).strip()
+        sample_id = str(row.get("sample_id", "")).strip()
+
+        # Prefer explicit image_path; fallback to shared sample metadata input_image.
+        image_path = str(row.get("image_path", "")).strip()
+        if not image_path:
+            metadata_path = str(row.get("metadata_path", "")).strip()
+            if metadata_path and os.path.isfile(metadata_path):
+                with open(metadata_path, "r", encoding="utf-8") as m:
+                    metadata = json.load(m)
+                image_path = str(metadata.get("input_image", "")).strip()
+
+        if not prompt or not output_video or not image_path or not os.path.isfile(image_path):
+            skipped += 1
+            continue
+
+        rows.append(
+            {
+                "sample_id": sample_id,
+                "video_path": image_path,
+                "caption": prompt,
+                "height": int(height),
+                "width": int(width),
+                "n_frames": int(n_frames),
+                "fps": int(fps),
+                "split": "validation",
+                "output_video": output_video,
+            }
+        )
+        if max_samples > 0 and len(rows) >= max_samples:
+            break
+
+if not rows:
+    print(f"ERROR: no valid rows from {manifest_path} (skipped={skipped})", file=sys.stderr)
+    raise SystemExit(1)
+
+os.makedirs(os.path.dirname(output_csv), exist_ok=True)
+with open(output_csv, "w", encoding="utf-8", newline="") as handle:
+    writer = csv.DictWriter(
+        handle,
+        fieldnames=[
+            "sample_id",
+            "video_path",
+            "caption",
+            "height",
+            "width",
+            "n_frames",
+            "fps",
+            "split",
+            "output_video",
+        ],
+    )
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+
+print(f"Wrote {len(rows)} LVP metadata rows to {output_csv} (skipped={skipped})")
+PY
+  then
+    if [[ "${CONTINUE_ON_ERROR}" == "1" ]]; then
+      echo "lvp/${dataset_name}/${task}: metadata generation failed; continuing due to CONTINUE_ON_ERROR=1" >&2
+      return 0
+    fi
+    exit 1
+  fi
+
+  local hist_guidance="${LVP_HIST_GUIDANCE_I2V}"
+  if [[ "${task}" == "t2v" ]]; then
+    # LVP is image-conditioned; for t2v slots we reduce history guidance toward text-dominant generation.
+    hist_guidance="${LVP_HIST_GUIDANCE_T2V}"
+  elif [[ "${task}" != "i2v" ]]; then
+    echo "Unknown task '${task}' for lvp. Use t2v or i2v." >&2
+    exit 1
+  fi
+
+  {
+    echo "[$(date -Is)] dataset=${dataset_name} task=${task}"
+    echo "[$(date -Is)] metadata_csv=${metadata_csv}"
+    echo "[$(date -Is)] hydra_dir=${hydra_dir}"
+  } >"${lvp_log}"
+
+  if ! python -m main \
+    +name="lvp_layout_${dataset_name}_${task}_${RUN_ID}" \
+    experiment=exp_video \
+    algorithm=wan_i2v \
+    "dataset=${LVP_DATASET}" \
+    'experiment.tasks=[validation]' \
+    algorithm.logging.video_type=single \
+    experiment.num_nodes=1 \
+    "experiment.validation.limit_batch=${LVP_LIMIT_BATCH}" \
+    "algorithm.hist_guidance=${hist_guidance}" \
+    "algorithm.lang_guidance=${LVP_LANG_GUIDANCE}" \
+    dataset.data_root=/ \
+    "dataset.metadata_path=${metadata_csv}" \
+    "dataset.height=${LVP_HEIGHT}" \
+    "dataset.width=${LVP_WIDTH}" \
+    "dataset.n_frames=${LVP_N_FRAMES}" \
+    "dataset.fps=${LVP_FPS}" \
+    dataset.filtering.disable=true \
+    dataset.test_percentage=1.0 \
+    dataset.load_prompt_embed=false \
+    dataset.check_video_path=false \
+    "hydra.run.dir=${hydra_dir}" >>"${lvp_log}" 2>&1; then
+    echo "lvp/${dataset_name}/${task} failed. See ${lvp_log}" >&2
+    if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
+      exit 1
+    fi
+  fi
+
+  local expected=0
+  local missing=0
+  read -r expected missing < <(python - "$metadata_csv" <<'PY'
+import csv
+import os
+import sys
+
+expected = 0
+missing = 0
+with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
+    reader = csv.DictReader(handle)
+    for row in reader:
+        output_video = str(row.get("output_video", "")).strip()
+        if not output_video:
+            continue
+        expected += 1
+        if not os.path.isfile(output_video):
+            missing += 1
+
+print(expected, missing)
+PY
+  )
+
+  if [[ "${missing}" -gt 0 ]]; then
+    echo "lvp/${dataset_name}/${task}: ${missing}/${expected} expected outputs missing after run" >&2
+    if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
+      exit 1
+    fi
+  fi
+
+  log "Finished lvp/${dataset_name}/${task} (${expected} samples checked)"
+}
+
 cd "${PROJECT_DIR}"
 
 IFS=',' read -r -a target_list <<< "${TARGETS}"
@@ -322,10 +541,26 @@ for raw_target in "${target_list[@]}"; do
         done
       done
       ;;
+    lvp)
+      log "Running LVP layout batch"
+      activate_env_name "${LVP_ENV_NAME}"
+      export WANDB_MODE="${WANDB_MODE:-offline}"
+      prepare_lvp_ckpts
+      cd "${PROJECT_DIR}/third_party/large-video-planner"
+      for raw_dataset in "${dataset_list[@]}"; do
+        dataset_name="${raw_dataset//[[:space:]]/}"
+        [[ -z "${dataset_name}" ]] && continue
+        for raw_task in "${task_list[@]}"; do
+          task="${raw_task//[[:space:]]/}"
+          [[ -z "${task}" ]] && continue
+          run_lvp_manifest "${dataset_name}" "${task}"
+        done
+      done
+      ;;
     "")
       ;;
     *)
-      echo "Unknown target '${target}'. Supported layout targets: wan22,wan21" >&2
+      echo "Unknown target '${target}'. Supported layout targets: wan22,wan21,lvp" >&2
       exit 1
       ;;
   esac
