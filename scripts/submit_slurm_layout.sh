@@ -17,6 +17,7 @@ TARGETS="${TARGETS:-wan22,wan21,lvp}"
 TASKS="${TASKS:-t2v,i2v}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-0}"
+SKIP_EXISTING="${SKIP_EXISTING:-1}"
 
 GPU_PARTITION="${GPU_PARTITION:-gpu_test}"
 GPUS="${GPUS:-1}"
@@ -71,6 +72,7 @@ if [[ "${use_local_submit}" == "1" ]]; then
     TASKS=\"${TASKS}\" \
     MAX_SAMPLES=\"${MAX_SAMPLES}\" \
     CONTINUE_ON_ERROR=\"${CONTINUE_ON_ERROR}\" \
+    SKIP_EXISTING=\"${SKIP_EXISTING}\" \
     RUN_ROOT=\"${RUN_ROOT}\" \
     sbatch \
       --job-name=${JOB_NAME} \
@@ -91,6 +93,7 @@ else
     TASKS=\"${TASKS}\" \
     MAX_SAMPLES=\"${MAX_SAMPLES}\" \
     CONTINUE_ON_ERROR=\"${CONTINUE_ON_ERROR}\" \
+    SKIP_EXISTING=\"${SKIP_EXISTING}\" \
     RUN_ROOT=\"${RUN_ROOT}\" \
     sbatch \
       --job-name=${JOB_NAME} \

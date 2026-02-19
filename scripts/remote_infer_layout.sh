@@ -24,6 +24,7 @@ TASKS="${TASKS:-t2v,i2v}"
 # Optional controls.
 MAX_SAMPLES="${MAX_SAMPLES:-0}"           # 0 means "all samples in manifest".
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-0}"  # 1 means keep going if one sample fails.
+SKIP_EXISTING="${SKIP_EXISTING:-1}"       # 1 means skip samples with existing non-empty output_video.
 
 MODEL_BASE="${MODEL_BASE:-/n/netscratch/ydu_lab/Lab/bcupps/models}"
 
@@ -203,8 +204,13 @@ run_wan22_manifest() {
   fi
 
   local sample_count=0
+  local skipped_existing=0
   while IFS=$'\x1f' read -r sample_id prompt image_path output_video; do
     [[ -z "${sample_id}" ]] && continue
+    if [[ "${SKIP_EXISTING}" == "1" && -s "${output_video}" ]]; then
+      skipped_existing=$((skipped_existing + 1))
+      continue
+    fi
     sample_count=$((sample_count + 1))
 
     local log_file="${RUN_ROOT}/wan22/${dataset_name}/${task}/logs/${sample_id}.log"
@@ -245,7 +251,7 @@ run_wan22_manifest() {
     fi
   done < <(manifest_rows "${manifest_path}" "${MAX_SAMPLES}")
 
-  log "Finished wan22/${dataset_name}/${task} (${sample_count} samples)"
+  log "Finished wan22/${dataset_name}/${task} (${sample_count} samples, skipped_existing=${skipped_existing})"
 }
 
 run_wan21_manifest() {
@@ -284,8 +290,13 @@ run_wan21_manifest() {
   fi
 
   local sample_count=0
+  local skipped_existing=0
   while IFS=$'\x1f' read -r sample_id prompt image_path output_video; do
     [[ -z "${sample_id}" ]] && continue
+    if [[ "${SKIP_EXISTING}" == "1" && -s "${output_video}" ]]; then
+      skipped_existing=$((skipped_existing + 1))
+      continue
+    fi
     sample_count=$((sample_count + 1))
 
     local log_file="${RUN_ROOT}/wan21/${dataset_name}/${task}/logs/${sample_id}.log"
@@ -326,7 +337,7 @@ run_wan21_manifest() {
     fi
   done < <(manifest_rows "${manifest_path}" "${MAX_SAMPLES}")
 
-  log "Finished wan21/${dataset_name}/${task} (${sample_count} samples)"
+  log "Finished wan21/${dataset_name}/${task} (${sample_count} samples, skipped_existing=${skipped_existing})"
 }
 
 run_lvp_manifest() {
@@ -345,17 +356,19 @@ run_lvp_manifest() {
   local hydra_dir="${RUN_ROOT}/lvp/${dataset_name}/${task}/logs/hydra_${RUN_ID}"
   mkdir -p "${runtime_dir}" "$(dirname "${lvp_log}")" "${hydra_dir}"
 
-  if ! python - "$manifest_path" "$metadata_csv" "$task" "$MAX_SAMPLES" "$LVP_HEIGHT" "$LVP_WIDTH" "$LVP_N_FRAMES" "$LVP_FPS" <<'PY'
+  if ! python - "$manifest_path" "$metadata_csv" "$task" "$MAX_SAMPLES" "$LVP_HEIGHT" "$LVP_WIDTH" "$LVP_N_FRAMES" "$LVP_FPS" "$SKIP_EXISTING" <<'PY'
 import csv
 import json
 import os
 import sys
 
-manifest_path, output_csv, task, max_samples, height, width, n_frames, fps = sys.argv[1:]
+manifest_path, output_csv, task, max_samples, height, width, n_frames, fps, skip_existing = sys.argv[1:]
 max_samples = int(max_samples)
+skip_existing = (skip_existing == "1")
 
 rows = []
 skipped = 0
+skipped_existing = 0
 with open(manifest_path, "r", encoding="utf-8") as handle:
     for line in handle:
         line = line.strip()
@@ -380,6 +393,10 @@ with open(manifest_path, "r", encoding="utf-8") as handle:
             skipped += 1
             continue
 
+        if skip_existing and os.path.isfile(output_video) and os.path.getsize(output_video) > 0:
+            skipped_existing += 1
+            continue
+
         rows.append(
             {
                 "sample_id": sample_id,
@@ -395,10 +412,6 @@ with open(manifest_path, "r", encoding="utf-8") as handle:
         )
         if max_samples > 0 and len(rows) >= max_samples:
             break
-
-if not rows:
-    print(f"ERROR: no valid rows from {manifest_path} (skipped={skipped})", file=sys.stderr)
-    raise SystemExit(1)
 
 os.makedirs(os.path.dirname(output_csv), exist_ok=True)
 with open(output_csv, "w", encoding="utf-8", newline="") as handle:
@@ -420,7 +433,7 @@ with open(output_csv, "w", encoding="utf-8", newline="") as handle:
     for row in rows:
         writer.writerow(row)
 
-print(f"Wrote {len(rows)} LVP metadata rows to {output_csv} (skipped={skipped})")
+print(f"Wrote {len(rows)} LVP metadata rows to {output_csv} (skipped={skipped}, skipped_existing={skipped_existing})")
 PY
   then
     if [[ "${CONTINUE_ON_ERROR}" == "1" ]]; then
@@ -428,6 +441,24 @@ PY
       return 0
     fi
     exit 1
+  fi
+
+  local pending_rows
+  pending_rows="$(python - "$metadata_csv" <<'PY'
+import csv
+import sys
+
+count = 0
+with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
+    reader = csv.DictReader(handle)
+    for _ in reader:
+        count += 1
+print(count)
+PY
+)"
+  if [[ "${pending_rows}" -eq 0 ]]; then
+    log "Skipping lvp/${dataset_name}/${task}: no pending samples (all outputs already exist)"
+    return 0
   fi
 
   local hist_guidance="${LVP_HIST_GUIDANCE_I2V}"
