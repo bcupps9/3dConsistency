@@ -479,6 +479,7 @@ PY
   if ! python -m main \
     +name="lvp_layout_${dataset_name}_${task}_${RUN_ID}" \
     experiment=exp_video \
+    experiment.strategy=auto \
     algorithm=wan_i2v \
     "dataset=${LVP_DATASET}" \
     'experiment.tasks=[validation]' \
