@@ -25,6 +25,7 @@ TASKS="${TASKS:-t2v,i2v}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"           # 0 means "all samples in manifest".
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-0}"  # 1 means keep going if one sample fails.
 SKIP_EXISTING="${SKIP_EXISTING:-1}"       # 1 means skip samples with existing non-empty output_video.
+HEARTBEAT_SECS="${HEARTBEAT_SECS:-120}"   # Periodic progress ping while a sample is running.
 
 MODEL_BASE="${MODEL_BASE:-/n/netscratch/ydu_lab/Lab/bcupps/models}"
 
@@ -56,10 +57,83 @@ LVP_HIST_GUIDANCE_T2V="${LVP_HIST_GUIDANCE_T2V:-0.0}"
 CONDA_HOOK_BIN="${CONDA_HOOK_BIN:-/n/sw/Miniforge3-24.11.3-0-fasrc02/bin/conda}"
 MINIFORGE_MODULE="${MINIFORGE_MODULE:-Miniforge3/24.11.3-fasrc02}"
 CUDA_MODULE="${CUDA_MODULE:-cuda/12.4.1-fasrc01}"
+PROGRESS_LOG="${PROGRESS_LOG:-${RUN_ROOT}/progress_${SLURM_JOB_ID:-local}.log}"
 
 log() {
   echo
   echo "==== $* ===="
+}
+
+ts() {
+  date -Is
+}
+
+progress() {
+  local msg="$*"
+  local line="[$(ts)] ${msg}"
+  echo "${line}"
+  echo "${line}" >> "${PROGRESS_LOG}"
+}
+
+manifest_expected_count() {
+  local manifest_path="$1"
+  local max_samples="$2"
+  python - "$manifest_path" "$max_samples" <<'PY'
+import json
+import sys
+
+manifest_path = sys.argv[1]
+max_samples = int(sys.argv[2])
+
+count = 0
+with open(manifest_path, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.strip()
+        if not line:
+            continue
+        json.loads(line)
+        count += 1
+        if max_samples > 0 and count >= max_samples:
+            break
+print(count)
+PY
+}
+
+count_output_videos() {
+  local outputs_dir="$1"
+  if [[ ! -d "${outputs_dir}" ]]; then
+    echo 0
+    return
+  fi
+  find "${outputs_dir}" -maxdepth 1 -type f -name '*.mp4' | wc -l | tr -d ' '
+}
+
+run_cmd_with_heartbeat() {
+  local label="$1"
+  local log_file="$2"
+  shift 2
+  local -a cmd=("$@")
+
+  local start_epoch
+  start_epoch="$(date +%s)"
+  "${cmd[@]}" >>"${log_file}" 2>&1 &
+  local cmd_pid="$!"
+
+  while kill -0 "${cmd_pid}" >/dev/null 2>&1; do
+    sleep "${HEARTBEAT_SECS}"
+    if kill -0 "${cmd_pid}" >/dev/null 2>&1; then
+      local now_epoch elapsed
+      now_epoch="$(date +%s)"
+      elapsed=$((now_epoch - start_epoch))
+      progress "HEARTBEAT ${label}: still running elapsed=${elapsed}s log=${log_file}"
+    fi
+  done
+
+  set +e
+  wait "${cmd_pid}"
+  local status="$?"
+  set -e
+  return "${status}"
 }
 
 if [[ -z "${DATASET_NAMES}" ]]; then
@@ -77,6 +151,12 @@ if [[ ! -d "${RUN_ROOT}" ]]; then
   echo "Run prepare_inference_layout.py first." >&2
   exit 1
 fi
+
+mkdir -p "$(dirname "${PROGRESS_LOG}")"
+{
+  echo "[$(ts)] START run_id=${RUN_ID} run_root=${RUN_ROOT}"
+  echo "[$(ts)] CONFIG datasets=${DATASET_NAMES} targets=${TARGETS} tasks=${TASKS} max_samples=${MAX_SAMPLES} skip_existing=${SKIP_EXISTING} continue_on_error=${CONTINUE_ON_ERROR} heartbeat_secs=${HEARTBEAT_SECS}"
+} >> "${PROGRESS_LOG}"
 
 if command -v module >/dev/null 2>&1; then
   module purge || true
@@ -172,6 +252,7 @@ run_wan22_manifest() {
   local dataset_name="$1"
   local task="$2"
   local manifest_path="${RUN_ROOT}/wan22/${dataset_name}/${task}/inputs/manifest.jsonl"
+  local outputs_dir="${RUN_ROOT}/wan22/${dataset_name}/${task}/outputs"
 
   if [[ ! -f "${manifest_path}" ]]; then
     log "Skipping wan22/${dataset_name}/${task}: manifest missing (${manifest_path})"
@@ -203,18 +284,31 @@ run_wan22_manifest() {
     exit 1
   fi
 
+  local expected_total outputs_before
+  expected_total="$(manifest_expected_count "${manifest_path}" "${MAX_SAMPLES}")"
+  outputs_before="$(count_output_videos "${outputs_dir}")"
+  progress "SLICE START wan22/${dataset_name}/${task}: expected=${expected_total} outputs_before=${outputs_before}"
+
+  local processed_count=0
   local sample_count=0
+  local success_count=0
+  local failed_count=0
   local skipped_existing=0
+  local skipped_missing_input=0
   while IFS=$'\x1f' read -r sample_id prompt image_path output_video; do
     [[ -z "${sample_id}" ]] && continue
+    processed_count=$((processed_count + 1))
     if [[ "${SKIP_EXISTING}" == "1" && -s "${output_video}" ]]; then
       skipped_existing=$((skipped_existing + 1))
+      progress "wan22/${dataset_name}/${task}: skip_existing sample=${processed_count}/${expected_total} sample_id=${sample_id}"
       continue
     fi
     sample_count=$((sample_count + 1))
 
     local log_file="${RUN_ROOT}/wan22/${dataset_name}/${task}/logs/${sample_id}.log"
     mkdir -p "$(dirname "${output_video}")" "$(dirname "${log_file}")"
+    local sample_start_epoch
+    sample_start_epoch="$(date +%s)"
 
     local cmd=(
       python generate.py
@@ -229,6 +323,8 @@ run_wan22_manifest() {
     if [[ "${task}" == "i2v" ]]; then
       if [[ -z "${image_path}" || ! -f "${image_path}" ]]; then
         echo "wan22/${dataset_name}/${task}/${sample_id}: missing image_path (${image_path})" >&2
+        skipped_missing_input=$((skipped_missing_input + 1))
+        progress "wan22/${dataset_name}/${task}: skip_missing_input sample=${processed_count}/${expected_total} sample_id=${sample_id} image_path=${image_path}"
         if [[ "${CONTINUE_ON_ERROR}" == "1" ]]; then
           continue
         fi
@@ -237,20 +333,35 @@ run_wan22_manifest() {
       cmd+=(--image "${image_path}")
     fi
 
+    progress "wan22/${dataset_name}/${task}: start sample=${processed_count}/${expected_total} sample_id=${sample_id} output=${output_video}"
     {
       echo "[$(date -Is)] sample_id=${sample_id}"
       echo "[$(date -Is)] output=${output_video}"
       echo "[$(date -Is)] cmd=${cmd[*]}"
     } >"${log_file}"
 
-    if ! "${cmd[@]}" >>"${log_file}" 2>&1; then
+    if ! run_cmd_with_heartbeat "wan22/${dataset_name}/${task}/${sample_id}" "${log_file}" "${cmd[@]}"; then
       echo "wan22/${dataset_name}/${task}/${sample_id} failed. See ${log_file}" >&2
+      failed_count=$((failed_count + 1))
+      local sample_end_epoch elapsed
+      sample_end_epoch="$(date +%s)"
+      elapsed=$((sample_end_epoch - sample_start_epoch))
+      progress "wan22/${dataset_name}/${task}: FAILED sample=${processed_count}/${expected_total} sample_id=${sample_id} elapsed=${elapsed}s log=${log_file}"
       if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
         exit 1
       fi
+    else
+      success_count=$((success_count + 1))
+      local sample_end_epoch elapsed
+      sample_end_epoch="$(date +%s)"
+      elapsed=$((sample_end_epoch - sample_start_epoch))
+      progress "wan22/${dataset_name}/${task}: done sample=${processed_count}/${expected_total} sample_id=${sample_id} elapsed=${elapsed}s output_exists=$([[ -s "${output_video}" ]] && echo 1 || echo 0)"
     fi
   done < <(manifest_rows "${manifest_path}" "${MAX_SAMPLES}")
 
+  local outputs_after
+  outputs_after="$(count_output_videos "${outputs_dir}")"
+  progress "SLICE DONE wan22/${dataset_name}/${task}: expected=${expected_total} processed=${processed_count} attempted=${sample_count} success=${success_count} failed=${failed_count} skipped_existing=${skipped_existing} skipped_missing_input=${skipped_missing_input} outputs_after=${outputs_after}"
   log "Finished wan22/${dataset_name}/${task} (${sample_count} samples, skipped_existing=${skipped_existing})"
 }
 
@@ -258,6 +369,7 @@ run_wan21_manifest() {
   local dataset_name="$1"
   local task="$2"
   local manifest_path="${RUN_ROOT}/wan21/${dataset_name}/${task}/inputs/manifest.jsonl"
+  local outputs_dir="${RUN_ROOT}/wan21/${dataset_name}/${task}/outputs"
 
   if [[ ! -f "${manifest_path}" ]]; then
     log "Skipping wan21/${dataset_name}/${task}: manifest missing (${manifest_path})"
@@ -289,18 +401,31 @@ run_wan21_manifest() {
     exit 1
   fi
 
+  local expected_total outputs_before
+  expected_total="$(manifest_expected_count "${manifest_path}" "${MAX_SAMPLES}")"
+  outputs_before="$(count_output_videos "${outputs_dir}")"
+  progress "SLICE START wan21/${dataset_name}/${task}: expected=${expected_total} outputs_before=${outputs_before}"
+
+  local processed_count=0
   local sample_count=0
+  local success_count=0
+  local failed_count=0
   local skipped_existing=0
+  local skipped_missing_input=0
   while IFS=$'\x1f' read -r sample_id prompt image_path output_video; do
     [[ -z "${sample_id}" ]] && continue
+    processed_count=$((processed_count + 1))
     if [[ "${SKIP_EXISTING}" == "1" && -s "${output_video}" ]]; then
       skipped_existing=$((skipped_existing + 1))
+      progress "wan21/${dataset_name}/${task}: skip_existing sample=${processed_count}/${expected_total} sample_id=${sample_id}"
       continue
     fi
     sample_count=$((sample_count + 1))
 
     local log_file="${RUN_ROOT}/wan21/${dataset_name}/${task}/logs/${sample_id}.log"
     mkdir -p "$(dirname "${output_video}")" "$(dirname "${log_file}")"
+    local sample_start_epoch
+    sample_start_epoch="$(date +%s)"
 
     local cmd=(
       python generate.py
@@ -315,6 +440,8 @@ run_wan21_manifest() {
     if [[ "${task}" == "i2v" ]]; then
       if [[ -z "${image_path}" || ! -f "${image_path}" ]]; then
         echo "wan21/${dataset_name}/${task}/${sample_id}: missing image_path (${image_path})" >&2
+        skipped_missing_input=$((skipped_missing_input + 1))
+        progress "wan21/${dataset_name}/${task}: skip_missing_input sample=${processed_count}/${expected_total} sample_id=${sample_id} image_path=${image_path}"
         if [[ "${CONTINUE_ON_ERROR}" == "1" ]]; then
           continue
         fi
@@ -323,20 +450,35 @@ run_wan21_manifest() {
       cmd+=(--image "${image_path}")
     fi
 
+    progress "wan21/${dataset_name}/${task}: start sample=${processed_count}/${expected_total} sample_id=${sample_id} output=${output_video}"
     {
       echo "[$(date -Is)] sample_id=${sample_id}"
       echo "[$(date -Is)] output=${output_video}"
       echo "[$(date -Is)] cmd=${cmd[*]}"
     } >"${log_file}"
 
-    if ! "${cmd[@]}" >>"${log_file}" 2>&1; then
+    if ! run_cmd_with_heartbeat "wan21/${dataset_name}/${task}/${sample_id}" "${log_file}" "${cmd[@]}"; then
       echo "wan21/${dataset_name}/${task}/${sample_id} failed. See ${log_file}" >&2
+      failed_count=$((failed_count + 1))
+      local sample_end_epoch elapsed
+      sample_end_epoch="$(date +%s)"
+      elapsed=$((sample_end_epoch - sample_start_epoch))
+      progress "wan21/${dataset_name}/${task}: FAILED sample=${processed_count}/${expected_total} sample_id=${sample_id} elapsed=${elapsed}s log=${log_file}"
       if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
         exit 1
       fi
+    else
+      success_count=$((success_count + 1))
+      local sample_end_epoch elapsed
+      sample_end_epoch="$(date +%s)"
+      elapsed=$((sample_end_epoch - sample_start_epoch))
+      progress "wan21/${dataset_name}/${task}: done sample=${processed_count}/${expected_total} sample_id=${sample_id} elapsed=${elapsed}s output_exists=$([[ -s "${output_video}" ]] && echo 1 || echo 0)"
     fi
   done < <(manifest_rows "${manifest_path}" "${MAX_SAMPLES}")
 
+  local outputs_after
+  outputs_after="$(count_output_videos "${outputs_dir}")"
+  progress "SLICE DONE wan21/${dataset_name}/${task}: expected=${expected_total} processed=${processed_count} attempted=${sample_count} success=${success_count} failed=${failed_count} skipped_existing=${skipped_existing} skipped_missing_input=${skipped_missing_input} outputs_after=${outputs_after}"
   log "Finished wan21/${dataset_name}/${task} (${sample_count} samples, skipped_existing=${skipped_existing})"
 }
 
@@ -344,11 +486,17 @@ run_lvp_manifest() {
   local dataset_name="$1"
   local task="$2"
   local manifest_path="${RUN_ROOT}/lvp/${dataset_name}/${task}/inputs/manifest.jsonl"
+  local outputs_dir="${RUN_ROOT}/lvp/${dataset_name}/${task}/outputs"
 
   if [[ ! -f "${manifest_path}" ]]; then
     log "Skipping lvp/${dataset_name}/${task}: manifest missing (${manifest_path})"
     return 0
   fi
+
+  local expected_total outputs_before
+  expected_total="$(manifest_expected_count "${manifest_path}" "${MAX_SAMPLES}")"
+  outputs_before="$(count_output_videos "${outputs_dir}")"
+  progress "SLICE START lvp/${dataset_name}/${task}: expected=${expected_total} outputs_before=${outputs_before}"
 
   local runtime_dir="${RUN_ROOT}/lvp/${dataset_name}/${task}/runtime"
   local metadata_csv="${runtime_dir}/metadata.csv"
@@ -457,6 +605,7 @@ print(count)
 PY
 )"
   if [[ "${pending_rows}" -eq 0 ]]; then
+    progress "SLICE DONE lvp/${dataset_name}/${task}: expected=${expected_total} pending=0 skipped_existing_or_filtered=all outputs_after=$(count_output_videos "${outputs_dir}")"
     log "Skipping lvp/${dataset_name}/${task}: no pending samples (all outputs already exist)"
     return 0
   fi
@@ -476,30 +625,35 @@ PY
     echo "[$(date -Is)] hydra_dir=${hydra_dir}"
   } >"${lvp_log}"
 
-  if ! python -m main \
-    +name="lvp_layout_${dataset_name}_${task}_${RUN_ID}" \
-    experiment=exp_video \
-    experiment.strategy=auto \
-    algorithm=wan_i2v \
-    "dataset=${LVP_DATASET}" \
-    'experiment.tasks=[validation]' \
-    algorithm.logging.video_type=single \
-    experiment.num_nodes=1 \
-    "experiment.validation.limit_batch=${LVP_LIMIT_BATCH}" \
-    "algorithm.hist_guidance=${hist_guidance}" \
-    "algorithm.lang_guidance=${LVP_LANG_GUIDANCE}" \
-    dataset.data_root=/ \
-    "dataset.metadata_path=${metadata_csv}" \
-    "dataset.height=${LVP_HEIGHT}" \
-    "dataset.width=${LVP_WIDTH}" \
-    "dataset.n_frames=${LVP_N_FRAMES}" \
-    "dataset.fps=${LVP_FPS}" \
-    dataset.filtering.disable=true \
-    dataset.test_percentage=1.0 \
-    dataset.load_prompt_embed=false \
-    dataset.check_video_path=false \
-    "hydra.run.dir=${hydra_dir}" >>"${lvp_log}" 2>&1; then
+  local -a lvp_cmd=(
+    python -m main
+    +name="lvp_layout_${dataset_name}_${task}_${RUN_ID}"
+    experiment=exp_video
+    experiment.strategy=auto
+    algorithm=wan_i2v
+    "dataset=${LVP_DATASET}"
+    "experiment.tasks=[validation]"
+    algorithm.logging.video_type=single
+    experiment.num_nodes=1
+    "experiment.validation.limit_batch=${LVP_LIMIT_BATCH}"
+    "algorithm.hist_guidance=${hist_guidance}"
+    "algorithm.lang_guidance=${LVP_LANG_GUIDANCE}"
+    dataset.data_root=/
+    "dataset.metadata_path=${metadata_csv}"
+    "dataset.height=${LVP_HEIGHT}"
+    "dataset.width=${LVP_WIDTH}"
+    "dataset.n_frames=${LVP_N_FRAMES}"
+    "dataset.fps=${LVP_FPS}"
+    dataset.filtering.disable=true
+    dataset.test_percentage=1.0
+    dataset.load_prompt_embed=false
+    dataset.check_video_path=false
+    "hydra.run.dir=${hydra_dir}"
+  )
+  progress "lvp/${dataset_name}/${task}: start validation pending=${pending_rows} metadata=${metadata_csv}"
+  if ! run_cmd_with_heartbeat "lvp/${dataset_name}/${task}" "${lvp_log}" "${lvp_cmd[@]}"; then
     echo "lvp/${dataset_name}/${task} failed. See ${lvp_log}" >&2
+    progress "lvp/${dataset_name}/${task}: FAILED run log=${lvp_log}"
     if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
       exit 1
     fi
@@ -530,11 +684,15 @@ PY
 
   if [[ "${missing}" -gt 0 ]]; then
     echo "lvp/${dataset_name}/${task}: ${missing}/${expected} expected outputs missing after run" >&2
+    progress "lvp/${dataset_name}/${task}: completed with missing_outputs=${missing}/${expected}"
     if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
       exit 1
     fi
   fi
 
+  local outputs_after
+  outputs_after="$(count_output_videos "${outputs_dir}")"
+  progress "SLICE DONE lvp/${dataset_name}/${task}: expected=${expected_total} pending=${pending_rows} checked=${expected} missing=${missing} outputs_after=${outputs_after}"
   log "Finished lvp/${dataset_name}/${task} (${expected} samples checked)"
 }
 
@@ -608,3 +766,4 @@ echo "run_root=${RUN_ROOT}"
 echo "datasets=${DATASET_NAMES}"
 echo "targets=${TARGETS}"
 echo "tasks=${TASKS}"
+echo "progress_log=${PROGRESS_LOG}"
