@@ -26,6 +26,7 @@ MAX_SAMPLES="${MAX_SAMPLES:-0}"           # 0 means "all samples in manifest".
 CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR:-0}"  # 1 means keep going if one sample fails.
 SKIP_EXISTING="${SKIP_EXISTING:-1}"       # 1 means skip samples with existing non-empty output_video.
 HEARTBEAT_SECS="${HEARTBEAT_SECS:-120}"   # Periodic progress ping while a sample is running.
+MISSING_CKPT_ACTION="${MISSING_CKPT_ACTION:-skip}"  # skip|fail when required checkpoint dir is unavailable.
 
 MODEL_BASE="${MODEL_BASE:-/n/netscratch/ydu_lab/Lab/bcupps/models}"
 
@@ -73,6 +74,14 @@ progress() {
   local line="[$(ts)] ${msg}"
   echo "${line}"
   echo "${line}" >> "${PROGRESS_LOG}"
+}
+
+ckpt_dir_is_ready() {
+  local ckpt_dir="$1"
+  [[ -d "${ckpt_dir}" ]] || return 1
+  local first_entry
+  first_entry="$(find "${ckpt_dir}" -mindepth 1 -maxdepth 2 -print -quit 2>/dev/null || true)"
+  [[ -n "${first_entry}" ]]
 }
 
 manifest_expected_count() {
@@ -141,6 +150,11 @@ if [[ -z "${DATASET_NAMES}" ]]; then
   exit 1
 fi
 
+if [[ "${MISSING_CKPT_ACTION}" != "skip" && "${MISSING_CKPT_ACTION}" != "fail" ]]; then
+  echo "Invalid MISSING_CKPT_ACTION=${MISSING_CKPT_ACTION}; expected skip|fail." >&2
+  exit 1
+fi
+
 if [[ ! -d "${PROJECT_DIR}" ]]; then
   echo "PROJECT_DIR not found: ${PROJECT_DIR}" >&2
   exit 1
@@ -155,7 +169,7 @@ fi
 mkdir -p "$(dirname "${PROGRESS_LOG}")"
 {
   echo "[$(ts)] START run_id=${RUN_ID} run_root=${RUN_ROOT}"
-  echo "[$(ts)] CONFIG datasets=${DATASET_NAMES} targets=${TARGETS} tasks=${TASKS} max_samples=${MAX_SAMPLES} skip_existing=${SKIP_EXISTING} continue_on_error=${CONTINUE_ON_ERROR} heartbeat_secs=${HEARTBEAT_SECS}"
+  echo "[$(ts)] CONFIG datasets=${DATASET_NAMES} targets=${TARGETS} tasks=${TASKS} max_samples=${MAX_SAMPLES} skip_existing=${SKIP_EXISTING} continue_on_error=${CONTINUE_ON_ERROR} heartbeat_secs=${HEARTBEAT_SECS} missing_ckpt_action=${MISSING_CKPT_ACTION}"
 } >> "${PROGRESS_LOG}"
 
 if command -v module >/dev/null 2>&1; then
@@ -202,7 +216,7 @@ prepare_lvp_ckpts() {
       ln -s "${LVP_TUNED_CKPT}" "${ckpt_root}/lvp_14B.ckpt"
     else
       echo "LVP tuned checkpoint missing: ${LVP_TUNED_CKPT}" >&2
-      exit 1
+      return 1
     fi
   fi
 
@@ -211,9 +225,11 @@ prepare_lvp_ckpts() {
       ln -s "${LVP_WAN21_DIR}" "${ckpt_root}/Wan2.1-I2V-14B-480P"
     else
       echo "Wan2.1 base checkpoint dir missing for LVP: ${LVP_WAN21_DIR}" >&2
-      exit 1
+      return 1
     fi
   fi
+
+  return 0
 }
 
 manifest_rows() {
@@ -279,9 +295,14 @@ run_wan22_manifest() {
       ;;
   esac
 
-  if [[ ! -d "${ckpt_dir}" ]]; then
-    echo "Wan2.2 checkpoint dir not found for ${task}: ${ckpt_dir}" >&2
-    exit 1
+  if ! ckpt_dir_is_ready "${ckpt_dir}"; then
+    local msg="wan22/${dataset_name}/${task}: checkpoint dir missing/empty (${ckpt_dir})"
+    echo "${msg}" >&2
+    progress "SLICE SKIP ${msg}"
+    if [[ "${MISSING_CKPT_ACTION}" == "fail" && "${CONTINUE_ON_ERROR}" != "1" ]]; then
+      exit 1
+    fi
+    return 0
   fi
 
   local expected_total outputs_before
@@ -396,9 +417,14 @@ run_wan21_manifest() {
       ;;
   esac
 
-  if [[ ! -d "${ckpt_dir}" ]]; then
-    echo "Wan2.1 checkpoint dir not found for ${task}: ${ckpt_dir}" >&2
-    exit 1
+  if ! ckpt_dir_is_ready "${ckpt_dir}"; then
+    local msg="wan21/${dataset_name}/${task}: checkpoint dir missing/empty (${ckpt_dir})"
+    echo "${msg}" >&2
+    progress "SLICE SKIP ${msg}"
+    if [[ "${MISSING_CKPT_ACTION}" == "fail" && "${CONTINUE_ON_ERROR}" != "1" ]]; then
+      exit 1
+    fi
+    return 0
   fi
 
   local expected_total outputs_before
@@ -739,7 +765,13 @@ for raw_target in "${target_list[@]}"; do
       log "Running LVP layout batch"
       activate_env_name "${LVP_ENV_NAME}"
       export WANDB_MODE="${WANDB_MODE:-offline}"
-      prepare_lvp_ckpts
+      if ! prepare_lvp_ckpts; then
+        progress "TARGET SKIP lvp: required checkpoints unavailable (LVP_TUNED_CKPT=${LVP_TUNED_CKPT}, LVP_WAN21_DIR=${LVP_WAN21_DIR})"
+        if [[ "${MISSING_CKPT_ACTION}" == "fail" && "${CONTINUE_ON_ERROR}" != "1" ]]; then
+          exit 1
+        fi
+        continue
+      fi
       cd "${PROJECT_DIR}/third_party/large-video-planner"
       for raw_dataset in "${dataset_list[@]}"; do
         dataset_name="${raw_dataset//[[:space:]]/}"
