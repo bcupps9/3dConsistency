@@ -132,21 +132,22 @@ for model in "${target_list[@]}"; do
 
       echo "submit ${model}/${dataset}/${task}: incomplete (${got}/${expected})"
       cmd=(
-        DATASET_NAMES="${dataset}"
-        TARGETS="${model}"
-        TASKS="${task}"
-        RUN_ROOT="${RUN_ROOT}"
-        GPU_PARTITION="${GPU_PARTITION}"
-        GRES="${GRES}"
-        CPUS_PER_TASK="${CPUS_PER_TASK}"
-        MEMORY="${MEMORY}"
-        WALLTIME="${WALLTIME}"
-        MAX_SAMPLES="${MAX_SAMPLES}"
-        SKIP_EXISTING="${SKIP_EXISTING}"
-        CONTINUE_ON_ERROR="${CONTINUE_ON_ERROR}"
-        MISSING_CKPT_ACTION="${MISSING_CKPT_ACTION}"
-        LOCAL_SUBMIT="${LOCAL_SUBMIT}"
-        JOB_NAME="wm_${model}_${dataset}_${task}"
+        env
+        "DATASET_NAMES=${dataset}"
+        "TARGETS=${model}"
+        "TASKS=${task}"
+        "RUN_ROOT=${RUN_ROOT}"
+        "GPU_PARTITION=${GPU_PARTITION}"
+        "GRES=${GRES}"
+        "CPUS_PER_TASK=${CPUS_PER_TASK}"
+        "MEMORY=${MEMORY}"
+        "WALLTIME=${WALLTIME}"
+        "MAX_SAMPLES=${MAX_SAMPLES}"
+        "SKIP_EXISTING=${SKIP_EXISTING}"
+        "CONTINUE_ON_ERROR=${CONTINUE_ON_ERROR}"
+        "MISSING_CKPT_ACTION=${MISSING_CKPT_ACTION}"
+        "LOCAL_SUBMIT=${LOCAL_SUBMIT}"
+        "JOB_NAME=wm_${model}_${dataset}_${task}"
         bash
         scripts/submit_slurm_layout.sh
         "${RUN_ID}"
@@ -165,4 +166,3 @@ done
 
 echo
 echo "Done. submitted=${submitted} skipped=${skipped} dry_run=${DRY_RUN}"
-
