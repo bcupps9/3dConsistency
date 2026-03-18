@@ -316,3 +316,6 @@ ssh -J bcupps@login.rc.fas.harvard.edu -N -L 18000:127.0.0.1:8000 bcupps@boslogi
 or 
 ssh -N -L 8000:127.0.0.1:8000 bcupps@login.rc.fas.harvard.edu
 then: open http://127.0.0.1:18000
+
+
+## LORA Finetuning:
